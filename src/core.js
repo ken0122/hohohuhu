@@ -1,20 +1,30 @@
 export const MODES = Object.freeze({
   DODGE: "dodge",
   PET: "pet",
-  CONTROL: "control",
   PACMAN: "pacman",
 });
+export const PET_FRAME_SIZE = 132;
+export const PET_SPRITE_SIZE = 84;
+export function normalizeMode(mode) { return mode === "control" ? MODES.PET : mode; }
 
 export function clamp(value, min, max) {
   return Math.min(Math.max(min, max), Math.max(min, value));
 }
 
 // Keep fractional coordinates in the simulation; round only native window bounds.
-export function fitPet(position, bounds, size = 144) {
+export function fitPet(position, bounds, size = PET_FRAME_SIZE) {
   return {
     x: clamp(position.x, bounds.x, bounds.x + bounds.width - size),
     y: clamp(position.y, bounds.y, bounds.y + bounds.height - size),
   };
+}
+
+export function validDragPoint(point) {
+  return point && Number.isFinite(point.x) && Number.isFinite(point.y)
+    && Math.abs(point.x) < 1000000 && Math.abs(point.y) < 1000000;
+}
+export function dragPosition(origin, start, cursor, bounds) {
+  return fitPet({ x: origin.x + cursor.x - start.x, y: origin.y + cursor.y - start.y }, bounds);
 }
 
 export function gazeDirection(x, y) {

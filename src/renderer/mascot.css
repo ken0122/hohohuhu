@@ -17,11 +17,17 @@ body[data-reaction="nuzzle"] .mascot-svg .mascot { animation: nuzzle 1.1s ease-i
 body[data-reaction="headpat"] .mascot-svg .mascot { animation: headpat 500ms ease-in-out 2; }
 body[data-reaction="hop"] .mascot-svg .mascot { animation: happy-hop 700ms cubic-bezier(.16,1,.3,1); }
 body[data-reaction="shy"] .mascot-svg .mascot { animation: shy 800ms ease-in-out; }
+body[data-reaction="tickle"] .mascot-svg .mascot { animation: tickle 800ms ease-in-out; }
+body[data-reaction="poke"] .mascot-svg .mascot { animation: poke 500ms ease-out; }
+body[data-reaction="cuddle"] .mascot-svg .mascot { animation: cuddle 1.2s ease-in-out; }
 body[data-reaction="idle-stretch"] .mascot-svg .mascot { animation: idle-stretch 1.5s ease-in-out; }
 @keyframes nuzzle { 0%,100% { transform: rotate(0); } 35% { transform: rotate(-4deg) translate(-1px,-.5px); } 70% { transform: rotate(3deg) translate(1px,-.5px); } }
 @keyframes headpat { 0%,100% { transform: scale(1); } 50% { transform: scale(1.025,.97) translateY(.5px); } }
 @keyframes happy-hop { 0%,100% { transform: translateY(0); } 20% { transform: scale(1.1,.85); } 50% { transform: translateY(-9px) scale(.95,1.05); } 80% { transform: translateY(0) scale(1.06,.94); } }
 @keyframes shy { 0%,100% { transform: rotate(0); } 35% { transform: rotate(-3deg) scale(.985); } 65% { transform: rotate(2deg) scale(.99); } }
+@keyframes tickle { 0%,100% { transform: rotate(0) scale(1); } 18%,50% { transform: rotate(-5deg) scale(1.025,.97); } 34%,66% { transform: rotate(5deg) scale(.98,1.02); } 82% { transform: rotate(-2deg); } }
+@keyframes poke { 0%,100% { transform: scale(1); } 28% { transform: translateY(1px) scale(1.07,.93); } 65% { transform: scale(.99,1.02); } }
+@keyframes cuddle { 0%,100% { transform: rotate(0) scale(1); } 35%,65% { transform: rotate(-4deg) scale(1.035,.97); } }
 @keyframes idle-stretch { 0%,100% { transform: scale(1) rotate(0); } 40% { transform: scale(.985,1.025) rotate(-1.5deg); } 70% { transform: scale(1.01,.995) rotate(1deg); } }
 body.is-paused .mascot-svg *, body.is-paused .affection span { animation-play-state: paused !important; }
 @media (prefers-reduced-motion: reduce) {

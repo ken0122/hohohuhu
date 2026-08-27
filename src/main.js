@@ -1,22 +1,26 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, screen, Tray } from "electron";
-import { clamp, controlVelocity, fitPet, MODES, nextDodgeVelocity, petShouldShow } from "./core.js";
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, screen, systemPreferences, Tray } from "electron";
+import { clamp, controlVelocity, fitPet, MODES, petShouldShow, normalizeMode, PET_FRAME_SIZE, PET_SPRITE_SIZE, validDragPoint, dragPosition } from "./core.js";
 import { askClaude } from "./chat.js";
+import { createDodgeMotion } from "./dodge.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
-const PET_SIZE = 144;
+const PET_SIZE = PET_FRAME_SIZE;
 const CHAT_SIZE = { width: 368, height: 300 };
 const HIDE_SHORTCUT = process.env.BLUEPET_HIDE_SHORTCUT || "Control+Alt+B";
 const CHAT_SHORTCUT = process.env.BLUEPET_CHAT_SHORTCUT || "Control+Alt+Space";
-const requestedMode = process.argv.find(arg => arg.startsWith("--mode="))?.split("=")[1];
+const requestedMode = normalizeMode(process.argv.find(arg => arg.startsWith("--mode="))?.split("=")[1]);
 const initialMode = Object.values(MODES).includes(requestedMode) ? requestedMode : MODES.DODGE;
 const state = { mode: initialMode, manualHidden: false, chatOpen: false, controlActive: false };
 let petWindow, gameWindow, tray, trayMenu, loop;
 let petReady = false, quitting = false, menuOpen = false;
 let position = { x: 80, y: 160 }, velocity = { x: 48, y: 25 };
 let lastTick = performance.now(), lastRecovery = 0;
+let dragSession;
+const dodge = createDodgeMotion();
+let dodgeMotion;
 const keys = new Set();
 const webPreferences = { preload: path.join(dirname, "preload.cjs"), contextIsolation: true,
   sandbox: true, nodeIntegration: false, backgroundThrottling: false };
@@ -35,6 +39,27 @@ function pinPet(display = cursorDisplay()) {
 function stopControl() {
   keys.clear(); state.controlActive = false;
   send("pet:motion", { x: 0, y: 0, gait: "idle" });
+}
+function endPetDrag() {
+  if (!dragSession) return;
+  dragSession = undefined;
+  send("pet:drag-end");
+}
+function handlePetDrag(event, request) {
+  if (!fromPet(event) || !request) return;
+  if (request.phase === "end") { endPetDrag(); return; }
+  if (state.mode !== MODES.PET || state.chatOpen || state.manualHidden || menuOpen || !petWindow.isVisible()) {
+    endPetDrag(); send("pet:drag-end"); return;
+  }
+  if (!validDragPoint(request.point)) return;
+  if (request.phase === "start") {
+    stopControl();
+    dragSession = { origin: { ...position }, start: request.point };
+  } else if (request.phase === "move" && dragSession) {
+    const display = screen.getDisplayNearestPoint({ x: Math.round(request.point.x), y: Math.round(request.point.y) });
+    position = dragPosition(dragSession.origin, dragSession.start, request.point, display.workArea);
+    petWindow.setPosition(Math.round(position.x), Math.round(position.y), false);
+  }
 }
 function normalFrame() {
   position = fitPet(position, currentDisplay().workArea, PET_SIZE);
@@ -56,7 +81,7 @@ function raiseWindow(win) {
 function syncPet({ focus = false } = {}) {
   if (!petReady || !petWindow || petWindow.isDestroyed()) return;
   raiseWindow(petWindow);
-  const focusable = state.chatOpen || state.mode === MODES.CONTROL || state.mode === MODES.PET;
+  const focusable = state.chatOpen || state.mode === MODES.PET;
   petWindow.setFocusable(focusable);
   petWindow.setBounds(petFrame(), false);
   petWindow.setOpacity(1);
@@ -68,20 +93,26 @@ function syncPet({ focus = false } = {}) {
     petWindow.showInactive();
     if (focus && focusable) {
       app.focus({ steal: true }); petWindow.show(); petWindow.focus();
-      state.controlActive = state.mode === MODES.CONTROL && !state.chatOpen;
+      state.controlActive = state.mode === MODES.PET && !state.chatOpen;
     }
   } else petWindow.hide();
 }
 export function restorePetFrame() {
+  dodge.reset();
+  endPetDrag();
   state.chatOpen = false; stopControl();
-  syncPet({ focus: state.mode === MODES.CONTROL && !state.manualHidden });
+  syncPet({ focus: state.mode === MODES.PET && !state.manualHidden });
 }
 export function showChat() {
+  dodge.reset();
+  endPetDrag();
   if (state.mode === MODES.PACMAN) setMode(MODES.PET);
   stopControl(); state.manualHidden = false; state.chatOpen = true;
   syncPet({ focus: true }); rebuildTrayMenu();
 }
 export function toggleHidden() {
+  dodge.reset();
+  endPetDrag();
   // Unexpectedly hidden windows recover on the first press.
   const target = state.mode === MODES.PACMAN ? gameWindow : petWindow;
   const currentlyVisible = !state.manualHidden && target?.isVisible();
@@ -119,18 +150,23 @@ function createGameWindow() {
   win.loadFile(path.join(dirname, "renderer/game.html"));
 }
 export function setMode(nextMode) {
+  nextMode = normalizeMode(nextMode);
   if (!Object.values(MODES).includes(nextMode)) return;
+  dodge.reset();
+  endPetDrag();
   closeGame(); stopControl();
   state.mode = nextMode; state.chatOpen = false;
   state.manualHidden = false; // Choosing a specific mode is an explicit reveal.
   if (nextMode === MODES.PET) pinPet();
   else position = fitPet(position, cursorDisplay().workArea, PET_SIZE);
-  syncPet({ focus: nextMode === MODES.CONTROL });
+  syncPet({ focus: nextMode === MODES.PET });
   if (nextMode === MODES.PACMAN) createGameWindow();
   rebuildTrayMenu();
 }
 export function recoverWindows({ focus = false } = {}) {
   if (quitting) return;
+  dodge.reset();
+  endPetDrag();
   position = fitPet(position, currentDisplay().workArea, PET_SIZE);
   if (!petWindow || petWindow.isDestroyed()) createPetWindow();
   else syncPet({ focus });
@@ -143,28 +179,33 @@ export function recoverWindows({ focus = false } = {}) {
   }
 }
 function tick() {
-  const now = performance.now(), dt = Math.min(.06, (now - lastTick) / 1000); lastTick = now;
-  if (!petReady || menuOpen || state.manualHidden || state.mode === MODES.PACMAN) return;
+  const now = performance.now(), elapsed = (now-lastTick)/1000, dt = Math.min(.06,elapsed); lastTick = now;
+  if (!petReady || menuOpen || dragSession || state.manualHidden || state.mode === MODES.PACMAN) { dodge.reset(); return; }
   if (now - lastRecovery > 1500) {
     lastRecovery = now;
     if (petShouldShow(state) && !petWindow.isVisible()) syncPet();
   }
-  if (state.chatOpen) return;
+  if (state.chatOpen) { dodge.reset(); return; }
   const cursor = screen.getCursorScreenPoint();
-  if (state.mode === MODES.PET) {
-    const x = cursor.x - position.x - PET_SIZE / 2, y = cursor.y - position.y - PET_SIZE + 60;
-    send("pet:proximity", { near: Math.hypot(x, y) < 110, x, y }); return;
-  }
   if (state.mode === MODES.DODGE) {
-    velocity = nextDodgeVelocity({ petCenter: { x: position.x + PET_SIZE / 2, y: position.y + PET_SIZE / 2 }, cursor, velocity, dt, bounds: currentDisplay().workArea });
-  } else velocity = state.controlActive ? controlVelocity(keys) : { x: 0, y: 0 };
+    dodgeMotion=dodge.step({petCenter:{x:position.x+PET_SIZE/2,y:position.y+PET_SIZE/2},cursor,dt:elapsed,bounds:currentDisplay().workArea,
+      reducedMotion:systemPreferences.getAnimationSettings().prefersReducedMotion});
+    velocity=dodgeMotion.velocity;
+  } else { dodge.reset(); dodgeMotion=undefined; velocity = state.controlActive ? controlVelocity(keys) : { x: 0, y: 0 }; }
   position = fitPet({ x: position.x + velocity.x * dt, y: position.y + velocity.y * dt }, currentDisplay().workArea, PET_SIZE);
   petWindow.setPosition(Math.round(position.x), Math.round(position.y), false);
-  send("pet:motion", { ...velocity, gait: Math.hypot(velocity.x, velocity.y) > 0 ? (state.mode === MODES.CONTROL ? "run" : "walk") : "idle" });
+  const moving = Math.hypot(velocity.x, velocity.y) > 0;
+  send("pet:motion", { ...velocity, gait: moving ? (state.mode === MODES.PET ? "run" : dodgeMotion.gait) : "idle" });
+  if (state.mode === MODES.PET && !moving) {
+    const x = cursor.x - position.x - PET_SIZE / 2;
+    const y = cursor.y - position.y - PET_SIZE + 7 + PET_SPRITE_SIZE / 2;
+    send("pet:proximity", { near: Math.hypot(x, y) < 100, x, y });
+  }
 }
 function controlInput(event, input) {
-  if (state.mode !== MODES.CONTROL || state.chatOpen || state.manualHidden) return;
-  if (input.type === "keyDown" && input.key === "Escape") { event.preventDefault(); setMode(MODES.PET); return; }
+  if (state.mode !== MODES.PET || state.chatOpen || state.manualHidden) return;
+  if (input.type === "keyDown" && input.key === "Escape") { event.preventDefault(); endPetDrag(); stopControl(); petWindow.blur(); return; }
+  if (dragSession) return;
   if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(input.key)) return;
   // Let Chromium receive keydown: cancelling it here can suppress the matching
   // native keyup on macOS. The renderer suppresses only scrolling/default actions.
@@ -177,13 +218,15 @@ function createPetWindow() {
     alwaysOnTop: true, skipTaskbar: true, show: false, focusable: false, acceptFirstMouse: true, hasShadow: false, webPreferences });
   petWindow = win; raiseWindow(win);
   win.webContents.on("before-input-event", controlInput);
-  win.on("blur", stopControl);
-  win.on("focus", () => { state.controlActive = state.mode === MODES.CONTROL && !state.chatOpen; });
+  win.on("blur", () => { endPetDrag(); stopControl(); });
+  win.webContents.on("did-start-loading", endPetDrag);
+  win.on("focus", () => { state.controlActive = state.mode === MODES.PET && !state.chatOpen; });
   win.webContents.on("did-finish-load", () => {
-    petReady = true; syncPet({ focus: state.chatOpen || state.mode === MODES.CONTROL });
+    petReady = true; syncPet({ focus: state.chatOpen });
   });
   win.webContents.on("render-process-gone", () => { if (!quitting) { petReady = false; win.reload(); } });
   win.on("closed", () => {
+    endPetDrag();
     if (petWindow === win) { petWindow = undefined; petReady = false; if (!quitting) createPetWindow(); }
   });
   win.loadFile(path.join(dirname, "renderer/pet.html"));
@@ -191,7 +234,7 @@ function createPetWindow() {
 function rebuildTrayMenu() {
   if (!tray || quitting) return;
   trayMenu = Menu.buildFromTemplate([
-    ...[[MODES.DODGE, "Dodge · 自由让路"], [MODES.PET, "Pet · 固定陪伴"], [MODES.CONTROL, "Control · 方向键控制"], [MODES.PACMAN, "Pac-Man · 吃颗豆豆"]]
+    ...[[MODES.DODGE, "Dodge · 自由让路"], [MODES.PET, "Pet · 互动与移动"], [MODES.PACMAN, "Pac-Man · 吃颗豆豆"]]
       .map(([value, label]) => ({ id: value, label, type: "radio", checked: state.mode === value, click: () => setMode(value) })),
     { type: "separator" },
     { id: "chat", label: "和它说句话", accelerator: CHAT_SHORTCUT, registerAccelerator: false, click: showChat },
@@ -202,7 +245,7 @@ function rebuildTrayMenu() {
       click: item => app.setLoginItemSettings({ openAtLogin: item.checked }) },
     { label: "退出 Blue One-Eye Pet", role: "quit" },
   ]);
-  trayMenu.on("menu-will-show", () => { menuOpen = true; keys.clear(); });
+  trayMenu.on("menu-will-show", () => { menuOpen = true; dodge.reset(); endPetDrag(); stopControl(); });
   trayMenu.on("menu-will-close", () => {
     menuOpen = false;
   });
@@ -227,13 +270,14 @@ ipcMain.on("pet:ready", event => { if (fromPet(event)) { petReady = true; syncPe
 function fromPet(event) { return event.sender === petWindow?.webContents && event.senderFrame === petWindow.webContents.mainFrame; }
 ipcMain.handle("chat:send", (event, prompt) => { if (!fromPet(event)) throw new Error("Invalid sender"); return askClaude(prompt); });
 ipcMain.on("chat:dismiss", event => { if (fromPet(event)) restorePetFrame(); });
-ipcMain.on("control:focus", event => { if (fromPet(event) && state.mode === MODES.CONTROL) syncPet({ focus: true }); });
+ipcMain.on("pet:focus", event => { if (fromPet(event) && state.mode === MODES.PET && !state.chatOpen && !state.manualHidden) syncPet({ focus: true }); });
+ipcMain.on("pet:drag", handlePetDrag);
 ipcMain.on("game:exit", event => { if (event.sender === gameWindow?.webContents) setMode(MODES.PET); });
 
 const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) app.quit();
 app.on("second-instance", (_event, argv) => {
-  const next = argv.find(arg => arg.startsWith("--mode="))?.split("=")[1];
+  const next = normalizeMode(argv.find(arg => arg.startsWith("--mode="))?.split("=")[1]);
   if (Object.values(MODES).includes(next)) setMode(next);
   else { state.manualHidden = false; recoverWindows({ focus: state.chatOpen }); rebuildTrayMenu(); }
 });
@@ -254,7 +298,7 @@ export const ready = app.whenReady().then(() => {
   if (initialMode === MODES.PACMAN) createGameWindow();
   for (const event of ["display-added", "display-removed", "display-metrics-changed"]) screen.on(event, () => recoverWindows());
   for (const event of ["resume", "unlock-screen"]) powerMonitor.on(event, () => { recoverWindows(); });
-  app.on("activate", () => recoverWindows());
+  app.on("activate", () => { if (!dragSession) recoverWindows(); });
 });
 function prepareQuit() { quitting = true; clearInterval(loop); }
 app.on("before-quit", prepareQuit);
@@ -262,7 +306,7 @@ app.on("will-quit", () => globalShortcut.unregisterAll());
 app.on("window-all-closed", () => {});
 
 // Test code runs in the main process; this API is not exposed to renderers or a port.
-export function getRuntime() { return { state: { ...state }, position: { ...position }, petWindow, gameWindow, tray, trayMenu, menuOpen }; }
+export function getRuntime() { return { state: { ...state }, position: { ...position }, petWindow, gameWindow, tray, trayMenu, menuOpen, dragPending: Boolean(dragSession), dodgeMotion }; }
 export function shutdown(code = 0) { prepareQuit(); globalShortcut.unregisterAll(); app.exit(code); }
 process.once("SIGTERM", () => shutdown());
 process.once("SIGINT", () => shutdown());

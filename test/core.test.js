@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clamp, cleanClaudeReply, limitUnicode, nextDodgeVelocity, controlVelocity, fitPet, gazeDirection, MODES, petShouldShow } from "../src/core.js";
+import { clamp, cleanClaudeReply, limitUnicode, nextDodgeVelocity, controlVelocity, fitPet, gazeDirection, MODES, petShouldShow, normalizeMode } from "../src/core.js";
 
 test("clamp keeps values inside bounds", () => {
   assert.equal(clamp(2, 5, 10), 5);
@@ -20,16 +20,20 @@ test("gaze follows vertical and horizontal movement without mirroring the body",
   assert.deepEqual(gazeDirection(-12,0), {x:-1,y:0});
 });
 test("Dodge stays visible unless manually hidden", () => {
-  for (const mode of [MODES.DODGE, MODES.PET, MODES.CONTROL]) {
+  for (const mode of [MODES.DODGE, MODES.PET]) {
     assert.equal(petShouldShow({mode,manualHidden:false}),true);
     assert.equal(petShouldShow({mode,manualHidden:true}),false);
   }
   assert.equal(petShouldShow({mode:MODES.PACMAN,manualHidden:false}),false);
 });
 test("recovery clamps detached/negative displays and tiny work areas", () => {
-  assert.deepEqual(fitPet({x:-5000,y:8000},{x:-1920,y:0,width:1920,height:1080}),{x:-1920,y:936});
+  assert.deepEqual(fitPet({x:-5000,y:8000},{x:-1920,y:0,width:1920,height:1080}),{x:-1920,y:948});
   assert.deepEqual(fitPet({x:100,y:100},{x:0,y:0,width:100,height:100}),{x:0,y:0});
   assert.equal(fitPet({x:40.3,y:50.7},{x:0,y:0,width:1000,height:800}).x,40.3);
+});
+test("there are three modes and legacy control resolves to Pet", () => {
+  assert.deepEqual(Object.values(MODES), ["dodge", "pet", "pacman"]);
+  assert.equal(normalizeMode("control"), "pet");
 });
 
 test("chat replies are capped by Unicode characters", () => {

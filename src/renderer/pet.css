@@ -21,9 +21,9 @@ button { -webkit-app-region: no-drag; }
   background: transparent;
   position: absolute;
   bottom: 7px;
-  left: calc(50% - 48px);
-  width: 96px;
-  height: 96px;
+  left: calc(50% - 42px);
+  width: 84px;
+  height: 84px;
   transform-origin: 50% 88%;
   transition: transform 320ms cubic-bezier(.16, 1, .3, 1), filter 320ms ease;
 }
@@ -34,23 +34,26 @@ body.chat-open .pet-hint { display: none; }
 .ground {
   position: absolute;
   z-index: 1;
-  left: 24px;
-  bottom: 8px;
-  width: 48px;
-  height: 8px;
+  left: 21px;
+  bottom: 7px;
+  width: 42px;
+  height: 7px;
   border-radius: 50%;
   background: rgba(25, 43, 98, .18);
   filter: blur(3px);
   transition: transform 240ms ease, opacity 240ms ease;
 }
 
-body[data-mode="pet"] .pet { cursor: pointer; }
-body[data-mode="control"] .pet { cursor: move; }
-body[data-mode="pet"] .pet:hover,
-body[data-mode="pet"].is-affectionate .pet { transform: translateY(-3px) rotate(-2deg) scale(1.03, .99); }
+body[data-mode="pet"] .pet { cursor: grab; touch-action: none; }
+body[data-mode="pet"].is-dragging .pet { cursor: grabbing; transform: none; transition: none; }
+body.is-dragging .affection { display: none; }
+body[data-mode="pet"].is-moving .pet { cursor: move; }
+body[data-mode="pet"]:not(.is-moving):not(.is-dragging) .pet:hover,
+body[data-mode="pet"].is-affectionate:not(.is-moving):not(.is-dragging) .pet { transform: translateY(-3px) rotate(-2deg) scale(1.03, .99); }
 body[data-mode="pet"] .pet:hover .ground,
 body[data-mode="pet"].is-affectionate .ground { transform: translateY(5px) scaleX(.82); opacity: .65; }
-.affection { position: absolute; z-index: 4; left: 50%; bottom: 82px; width: 76px; transform: translateX(-50%); pointer-events: none; }
+.affection { position: absolute; z-index: 4; left: 50%; bottom: 72px; width: 68px; transform: translateX(-50%); pointer-events: none; }
+body.is-moving .affection { display: none; }
 .affection span { position: absolute; color: #6e89f1; opacity: 0; font-size: 13px; text-shadow: 0 2px 7px rgba(37, 64, 155, .24); }
 .affection span:nth-child(1) { left: 10px; }
 .affection span:nth-child(2) { left: 34px; top: -8px; }

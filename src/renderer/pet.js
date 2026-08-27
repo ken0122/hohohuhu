@@ -1,5 +1,7 @@
 import { createMascot } from "./mascot.js";
 import { idleDelay } from "./eye-motion.js";
+import { REACTIONS, clickReaction, createStrokeGesture } from "./pet-interactions.js";
+import { createPetDrag } from "./pet-drag.js";
 const body = document.body;
 const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message");
@@ -11,11 +13,28 @@ const pet = document.querySelector("#pet");
 const hint = document.querySelector("#pet-hint");
 const character = await createMascot(document.querySelector("#character"));
 let mode = "dodge", chatOpen = false, near = false, pending = false;
-let reactionTimer, hintTimer, hoverTimer, lastReaction = 0, strokeDistance = 0, lastPointer;
-let clickCount = 0;
+let reactionTimer, hintTimer, hoverTimer, lastReaction = 0;
+let moving = false, holdTimer, pressPoint, suppressClick = false;
+const gesture = createStrokeGesture();
+const reactionCounts = {};
 let visible = false, hovering = false, idleTimer, idleFinish, idleCount = 0;
 let lastReactionKind;
+let dragging = false;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+const drag = createPetDrag(pet, {
+  enabled: () => mode === "pet" && visible && !chatOpen,
+  onPress() { moving = false; body.classList.remove("is-moving"); stopIdle(); character.reset(); },
+  onStart() {
+    resetReaction(); character.reset(); dragging = true; suppressClick = true;
+    body.classList.add("is-dragging");
+  },
+  onEnd({ dragged, cancelled }) {
+    dragging = false; body.classList.remove("is-dragging");
+    clearTimeout(holdTimer); pressPoint = undefined; gesture.reset();
+    if (dragged || cancelled) { suppressClick = true; lastReaction = performance.now(); }
+    scheduleIdle();
+  },
+});
 
 function stopIdle() {
   clearTimeout(idleTimer); idleTimer = undefined;
@@ -25,7 +44,7 @@ function stopIdle() {
   }
 }
 function scheduleIdle() {
-  if (idleTimer || idleFinish || mode !== "pet" || !visible || document.hidden || chatOpen || near || hovering || reduced.matches || body.dataset.reaction) return;
+  if (idleTimer || idleFinish || mode !== "pet" || !visible || document.hidden || chatOpen || moving || drag.pressed || near || hovering || reduced.matches || body.dataset.reaction) return;
   idleTimer = setTimeout(() => {
     idleTimer = undefined;
     body.dataset.reaction = ++idleCount % 2 ? "idle-look" : "idle-stretch";
@@ -40,28 +59,32 @@ document.addEventListener("visibilitychange", () => { stopIdle(); scheduleIdle()
 reduced.addEventListener("change", () => { stopIdle(); scheduleIdle(); });
 
 function react(kind, message) {
-  if (mode !== "pet" || chatOpen || !visible) return;
+  if (mode !== "pet" || chatOpen || !visible || moving || dragging) return;
   if (lastReactionKind === kind && performance.now() - lastReaction < 1800) return;
   stopIdle();
   clearTimeout(reactionTimer);
+  clearTimeout(hintTimer);
   clearTimeout(hoverTimer);
   body.dataset.reaction = kind;
   lastReaction = performance.now();
   lastReactionKind = kind;
   character.react(kind);
-  hint.textContent = message;
-  const duration = { nuzzle: 1100, headpat: 1000, hop: 700, shy: 800 }[kind];
+  const { duration, messages } = REACTIONS[kind];
+  const count = reactionCounts[kind] || 0;
+  hint.textContent = message || messages[count % messages.length];
+  reactionCounts[kind] = count + 1;
   reactionTimer = setTimeout(() => { delete body.dataset.reaction; hint.textContent = ""; scheduleIdle(); }, duration);
 }
 function resetReaction() {
   stopIdle();
+  clearTimeout(holdTimer); pressPoint = undefined; suppressClick = false;
   clearTimeout(reactionTimer); clearTimeout(hoverTimer); clearTimeout(hintTimer);
   delete body.dataset.reaction;
   body.classList.remove("is-affectionate");
-  near = false; hovering = false; hint.textContent = ""; strokeDistance = 0; lastPointer = undefined;
+  near = false; hovering = false; hint.textContent = ""; gesture.reset();
 }
 function proximity({ near: isNear, x, y }) {
-  if (mode !== "pet" || chatOpen) return;
+  if (mode !== "pet" || chatOpen || moving || drag.pressed) return;
   body.classList.toggle("is-affectionate", isNear);
   if (isNear) { stopIdle(); character.motion({ x, y, gait: "idle" }); }
   else if (near) character.reset();
@@ -80,17 +103,25 @@ window.bluepet.onState(state => {
   body.classList.toggle("is-paused", !state.visible);
   speech.inert = !chatOpen;
   speech.setAttribute("aria-hidden", String(!chatOpen));
-  if (changedMode || changedChat || !state.visible) { resetReaction(); character.reset(); }
+  if (changedMode || changedChat || !state.visible) { drag.cancel(); moving = false; body.classList.remove("is-moving"); resetReaction(); character.reset(); }
   scheduleIdle();
   if (chatOpen && state.visible) setTimeout(() => { if (chatOpen) input.focus(); }, 60);
   if (changedChat && !chatOpen && !pending) input.value = "";
-  if (mode === "control" && !chatOpen && state.visible) {
-    hint.textContent = "↑ ↓ ← → · Esc 退出";
+  if (changedMode && mode === "pet" && !chatOpen && state.visible) {
+    hint.textContent = "↑ ↓ ← → 移动 · 长按抱抱";
     clearTimeout(hintTimer);
     hintTimer = setTimeout(() => { hint.textContent = ""; }, 2500);
   }
 });
-window.bluepet.onPetMotion(motion => character.motion(motion));
+window.bluepet.onPetMotion(motion => {
+  if (drag.pressed) return;
+  const nextMoving = mode === "pet" && motion.gait === "run";
+  if (nextMoving && !moving) resetReaction();
+  if (mode === "dodge" || nextMoving || moving) character.motion(motion);
+  moving = nextMoving;
+  body.classList.toggle("is-moving", moving);
+  if (!moving) scheduleIdle();
+});
 window.bluepet.onPetProximity(proximity);
 window.bluepet.ready();
 
@@ -115,32 +146,49 @@ form.addEventListener("submit", async event => {
 });
 document.querySelector("#dismiss").addEventListener("click", () => window.bluepet.dismissChat());
 window.addEventListener("keydown", event => {
-  if (mode === "control" && !chatOpen && event.key.startsWith("Arrow")) event.preventDefault();
+  if (mode === "pet" && !chatOpen && event.key.startsWith("Arrow")) event.preventDefault();
   if (event.key === "Escape" && chatOpen) window.bluepet.dismissChat();
 });
-pet.addEventListener("click", () => {
-  if (mode === "control") return window.bluepet.focusControl();
-  clickCount++;
-  react(clickCount % 2 ? "hop" : "shy", clickCount % 2 ? "嘿嘿！" : "有点害羞…");
+function point(event) {
+  const rect = pet.getBoundingClientRect();
+  return { x: (event.clientX - rect.x) / rect.width, y: (event.clientY - rect.y) / rect.height };
+}
+pet.addEventListener("click", event => {
+  if (mode !== "pet" || chatOpen) return;
+  window.bluepet.focusPet();
+  if (suppressClick) { suppressClick = false; return; }
+  const { x, y } = event.detail === 0 ? { x: .5, y: .5 } : point(event);
+  react(clickReaction(x, y));
+});
+pet.addEventListener("pointerdown", event => {
+  if (mode !== "pet" || chatOpen || moving || event.button !== 0) return;
+  clearTimeout(holdTimer); clearTimeout(hoverTimer);
+  suppressClick = false; pressPoint = point(event);
+  holdTimer = setTimeout(() => { suppressClick = true; react("cuddle"); }, 650);
+});
+pet.addEventListener("pointerup", () => { clearTimeout(holdTimer); pressPoint = undefined; });
+pet.addEventListener("pointercancel", () => {
+  clearTimeout(holdTimer); pressPoint = undefined; gesture.reset();
 });
 pet.addEventListener("pointerenter", () => {
-  if (mode !== "pet") return;
+  if (mode !== "pet" || chatOpen || moving || drag.pressed) return;
   hovering = true; stopIdle();
   body.classList.add("is-affectionate");
   clearTimeout(hoverTimer);
   hoverTimer = setTimeout(() => react("nuzzle", "再陪我一会儿"), 1100);
 });
 pet.addEventListener("pointerleave", () => {
+  if (drag.pressed) return;
   hovering = false;
-  clearTimeout(hoverTimer); lastPointer = undefined; strokeDistance = 0;
+  clearTimeout(hoverTimer); clearTimeout(holdTimer); pressPoint = undefined; gesture.reset();
   scheduleIdle();
 });
 pet.addEventListener("pointermove", event => {
-  if (mode !== "pet") return;
-  const rect = pet.getBoundingClientRect();
-  if (lastPointer && event.clientY < rect.y + rect.height * .6) {
-    strokeDistance += Math.abs(event.clientX - lastPointer.x);
-    if (strokeDistance > 50) { react("headpat", "摸摸头，好舒服"); strokeDistance = 0; }
+  if (mode !== "pet" || chatOpen || moving || dragging) return;
+  const { x, y } = point(event);
+  if (pressPoint && Math.hypot(x - pressPoint.x, y - pressPoint.y) > .18) {
+    clearTimeout(holdTimer); pressPoint = undefined;
   }
-  lastPointer = { x: event.clientX, y: event.clientY };
+  const kind = gesture.move(x, y, performance.now());
+  if (kind) react(kind);
 });

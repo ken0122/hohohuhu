@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { app, globalShortcut, nativeImage, screen, powerMonitor } from "electron";
+import { app, globalShortcut, nativeImage, screen, powerMonitor, systemPreferences } from "electron";
 
 // Do not await app readiness at module top level: Electron awaits ESM evaluation.
 // Real Electron windows, isolated app data, no network/provider calls.
@@ -42,6 +42,7 @@ try {
     const structure=await evaluate("Array.from(document.querySelector('.mascot-svg').querySelectorAll('*'),e=>e.tagName)");
     const baseline=await evaluate("Array.from(new DOMParser().parseFromString("+JSON.stringify(original)+",'image/svg+xml').documentElement.querySelectorAll('*'),e=>e.tagName)");
     assert.deepEqual(structure,baseline);
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.pet')).width"),"84px");
     await writeFile(path.resolve("work/original-idle.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
   });
   await check("eye stays open by default under CSP, with only brief natural blinks",async()=>{
@@ -77,13 +78,14 @@ try {
     assert.ok(painted>20&&transparent>20);
     assert.equal(getRuntime().tray.listenerCount("click"),0);
     assert.ok(getRuntime().tray.getBounds().width>0);
+    assert.deepEqual(getRuntime().trayMenu.items.filter(item=>item.type==="radio").map(item=>item.id),["dodge","pet","pacman"]);
   });
   await check("both global shortcuts registered; menu cannot double-register hide", async () => {
     assert.ok(globalShortcut.isRegistered("Control+Alt+B"));
     assert.ok(globalShortcut.isRegistered("Control+Alt+Space"));
     assert.equal(getRuntime().trayMenu.getMenuItemById("hide").registerAccelerator,false);
   });
-  for(const mode of ["dodge","pet","control"]) {
+  for(const mode of ["dodge","pet"]) {
     await check(mode + ": visible geometry, real character pixels, chat roundtrip and boss-key restore",async()=>{
       setMode(mode); await delay(180);
       assert.equal(getRuntime().petWindow.isVisible(),true);
@@ -91,10 +93,10 @@ try {
       toggleHidden(); assert.equal(getRuntime().petWindow.isVisible(),false);
       toggleHidden(); await delay(160); assert.equal(getRuntime().petWindow.isVisible(),true); await visiblePixels();
       showChat(); await delay(140); assert.equal(await evaluate("document.body.classList.contains('chat-open')"),true);
-      restorePetFrame(); await delay(220); assert.deepEqual(await evaluate("[innerWidth,innerHeight]"),[144,144]);
+      restorePetFrame(); await delay(220); assert.deepEqual(await evaluate("[innerWidth,innerHeight]"),[132,132]);
       await visiblePixels();
       const rect = await evaluate("document.querySelector('.pet').getBoundingClientRect().toJSON()");
-      assert.ok(rect.left >= 0 && rect.right <= 144 && rect.top >= 0 && rect.bottom <= 144);
+      assert.ok(rect.left >= 0 && rect.right <= 132 && rect.top >= 0 && rect.bottom <= 132);
     });
   }
   await check("opening/cancelling status menu leaves hidden state and chat untouched",async()=>{
@@ -119,8 +121,8 @@ try {
     await until(()=>closed,2000);clearTimeout(close);
     assert.deepEqual(getRuntime().state,before);
   });
-  await check("Control: actual key events move in four directions, keep body on canvas, morph the original body and aim pupils",async()=>{
-    setMode("control"); await delay(150);
+  await check("Pet keyboard: four directions, release, focus loss, chat isolation and legacy Control alias",async()=>{
+    setMode("control"); await delay(150); assert.equal(getRuntime().state.mode,"pet");
     for(const [key,axis,sign] of [["LEFT","x",-1],["UP","y",-1],["RIGHT","x",1],["DOWN","y",1]]) {
       const win=getRuntime().petWindow, before=getRuntime().position;
       const events=[];
@@ -140,7 +142,7 @@ try {
       await delay(65);
       assert.notEqual(await evaluate("getComputedStyle(document.querySelector('path.body')).d"),shapeBefore);
       await visiblePixels();
-      await writeFile(path.resolve("work/control-"+key.toLowerCase()+".png"),(await win.webContents.capturePage()).toPNG());
+      await writeFile(path.resolve("work/pet-move-"+key.toLowerCase()+".png"),(await win.webContents.capturePage()).toPNG());
       app.focus({steal:true}); win.focus(); win.webContents.focus();
       win.webContents.sendInputEvent({type:"keyUp",keyCode:key}); await delay(150);
       assert.ok(events.some(e=>e.type==="keyUp"), "key release reaches main process");
@@ -150,7 +152,14 @@ try {
     const win=getRuntime().petWindow;
     win.webContents.sendInputEvent({type:"keyDown",keyCode:"LEFT"}); await delay(100); win.emit("blur");
     await delay(100); assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.gait"),"idle");
-    win.webContents.sendInputEvent({type:"keyDown",keyCode:"ESCAPE"}); await delay(120); assert.equal(getRuntime().state.mode,"pet");
+    const beforeEscape=getRuntime().position;
+    win.webContents.sendInputEvent({type:"keyDown",keyCode:"ESCAPE"}); await delay(120);
+    assert.equal(getRuntime().state.mode,"pet"); assert.deepEqual(getRuntime().position,beforeEscape);
+    showChat(); await delay(150);
+    const beforeChat=getRuntime().position;
+    win.webContents.sendInputEvent({type:"keyDown",keyCode:"RIGHT"});await delay(150);
+    assert.deepEqual(getRuntime().position,beforeChat);
+    win.webContents.sendInputEvent({type:"keyUp",keyCode:"RIGHT"});restorePetFrame();
   });
   await check("Pet: proximity, linger, strokes and clicks have distinct bounded reactions",async()=>{
     setMode("pet"); await delay(180);
@@ -164,8 +173,99 @@ try {
     assert.equal(await evaluate("document.querySelector('.lid').getAnimations().length"),0,"repeated strokes do not keep the eye drooping");
     await evaluate("document.querySelector('.pet').click()"); assert.equal(await evaluate("document.body.dataset.reaction"),"hop");
     await writeFile(path.resolve("work/pet-hop.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
-    await evaluate("document.querySelector('.pet').click()"); assert.equal(await evaluate("document.body.dataset.reaction"),"shy");
+    await evaluate("(()=>{const p=document.querySelector('.pet'),r=p.getBoundingClientRect();p.dispatchEvent(new MouseEvent('click',{clientX:r.x+r.width*.5,clientY:r.y+r.height*.2,detail:1}));})()"); assert.equal(await evaluate("document.body.dataset.reaction"),"shy");
     await delay(1800); assert.equal(await evaluate("document.body.dataset.reaction"),undefined);
+  });
+  await check("Pet touch: tickle belly, poke, cheek nuzzle and native long-press cuddle",async()=>{
+    setMode("dodge"); setMode("pet"); await delay(150);
+    getRuntime().trayMenu.emit("menu-will-show",{});
+    const poke=(x,y)=>evaluate(`(()=>{const p=document.querySelector('.pet'),r=p.getBoundingClientRect();p.dispatchEvent(new MouseEvent('click',{clientX:r.x+r.width*${x},clientY:r.y+r.height*${y},detail:1}));})()`);
+    await poke(.5,.75); assert.equal(await evaluate("document.body.dataset.reaction"),"poke");
+    assert.match(await evaluate("document.querySelector('#pet-hint').textContent"),/肚肚/);
+    await poke(.2,.5); assert.equal(await evaluate("document.body.dataset.reaction"),"nuzzle");
+    await evaluate("document.querySelector('.pet').dispatchEvent(new PointerEvent('pointerleave'))");
+    for(const x of [.3,.7,.3,.7]) {
+      await evaluate(`(()=>{const p=document.querySelector('.pet'),r=p.getBoundingClientRect();p.dispatchEvent(new PointerEvent('pointermove',{clientX:r.x+r.width*${x},clientY:r.y+r.height*.75}));})()`);
+      await delay(45);
+    }
+    assert.equal(await evaluate("document.body.dataset.reaction"),"tickle");
+    assert.match(await evaluate("document.querySelector('#pet-hint').textContent"),/痒/);
+    await writeFile(path.resolve("work/pet-tickle.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
+    await delay(850); assert.equal(await evaluate("document.body.dataset.reaction"),undefined);
+    getRuntime().trayMenu.emit("menu-will-close",{});
+    const win=getRuntime().petWindow;
+    app.focus({steal:true});win.focus();win.webContents.focus();await delay(120);
+    const rect=await evaluate("document.querySelector('.pet').getBoundingClientRect().toJSON()");
+    const point={x:Math.round(rect.x+rect.width*.5),y:Math.round(rect.y+rect.height*.75)};
+    await evaluate("window.pointerTrace=[];for(const type of ['pointerdown','pointermove','pointerup','pointercancel','gotpointercapture','lostpointercapture','blur'])window.addEventListener(type,e=>window.pointerTrace.push({type,buttons:e.buttons,x:e.screenX,y:e.screenY}),true)");
+    win.webContents.sendInputEvent({type:"mouseMove",...point});
+    win.webContents.sendInputEvent({type:"mouseDown",button:"left",clickCount:1,...point});
+    await delay(720); assert.equal(await evaluate("document.body.dataset.reaction"),"cuddle",JSON.stringify({pending:getRuntime().dragPending,trace:await evaluate("window.pointerTrace")}));
+    win.webContents.sendInputEvent({type:"mouseUp",button:"left",clickCount:1,...point});
+    await delay(80); assert.equal(await evaluate("document.body.dataset.reaction"),"cuddle","release does not turn a cuddle into a poke");
+    await writeFile(path.resolve("work/pet-cuddle.png"),(await win.webContents.capturePage()).toPNG());
+    showChat();await delay(100);assert.equal(await evaluate("document.body.dataset.reaction"),undefined);
+    restorePetFrame();getRuntime().trayMenu.emit("menu-will-close",{});
+  });
+  await check("Pet drag: native pointer capture, threshold, release without click and stable placement",async()=>{
+    setMode("dodge");setMode("pet");await delay(200);
+    const win=getRuntime().petWindow;
+    app.focus({steal:true});win.focus();win.webContents.focus();await delay(150);
+    const rect=await evaluate("document.querySelector('.pet').getBoundingClientRect().toJSON()");
+    const bounds=win.getBounds(), origin=getRuntime().position;
+    const start={x:bounds.x+Math.round(rect.x+rect.width*.5),y:bounds.y+Math.round(rect.y+rect.height*.75)};
+    const at=(type,point,extra={})=>{
+      const b=win.getBounds();
+      win.webContents.sendInputEvent({type,x:Math.round(point.x-b.x),y:Math.round(point.y-b.y),globalX:Math.round(point.x),globalY:Math.round(point.y),...extra});
+    };
+    at("mouseMove",start);at("mouseDown",start,{button:"left",clickCount:1});
+    await until(()=>getRuntime().dragPending);
+    at("mouseMove",{x:start.x+2,y:start.y+1},{modifiers:["leftButtonDown"]});await delay(80);
+    assert.equal(getRuntime().dragPending,true,JSON.stringify(await evaluate("window.pointerTrace")));
+    assert.deepEqual(getRuntime().position,origin,"tiny jitter does not move the window");
+    const first={x:start.x-14,y:start.y-12};
+    at("mouseMove",first,{modifiers:["leftButtonDown"]});
+    await delay(120);
+    assert.ok(getRuntime().position.x<origin.x-5,JSON.stringify({origin,position:getRuntime().position,pending:getRuntime().dragPending,trace:await evaluate("window.pointerTrace")}));
+    assert.equal(await evaluate("document.body.classList.contains('is-dragging')"),true);
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.pet')).cursor"),"grabbing");
+    const target={x:start.x-90,y:start.y-60};
+    at("mouseMove",target,{modifiers:["leftButtonDown"]});await delay(100);
+    assert.ok(Math.abs(getRuntime().position.x-(origin.x-90))<2);
+    assert.ok(Math.abs(getRuntime().position.y-(origin.y-60))<2);
+    assert.equal(await evaluate("document.body.dataset.reaction"),undefined);
+    await writeFile(path.resolve("work/pet-drag.png"),(await win.webContents.capturePage()).toPNG());
+    at("mouseUp",target,{button:"left",clickCount:1});await until(()=>!getRuntime().dragPending);
+    const dropped=getRuntime().position;await delay(300);
+    assert.deepEqual(getRuntime().position,dropped);
+    assert.equal(await evaluate("document.body.classList.contains('is-dragging')"),false);
+    assert.equal(await evaluate("document.body.dataset.reaction"),undefined,"dropping does not poke, cuddle or tickle");
+    at("mouseDown",target,{button:"left",clickCount:1});await delay(50);
+    at("mouseUp",target,{button:"left",clickCount:1});await delay(100);
+    assert.equal(await evaluate("document.body.dataset.reaction"),"poke","a fresh click still works after dragging");
+  });
+  await check("Pet drag: screen clamping, invalid coordinates, Escape/chat/hide/mode cancellation",async()=>{
+    setMode("pet");await delay(150);
+    const send=request=>evaluate("window.bluepet.dragPet("+JSON.stringify(request)+")");
+    const origin=getRuntime().position;
+    await send({phase:"start",point:origin});await until(()=>getRuntime().dragPending);
+    await evaluate("window.bluepet.dragPet({phase:'move',point:{x:NaN,y:0}})");await delay(80);
+    assert.deepEqual(getRuntime().position,origin);
+    const cursor={x:-9000,y:-9000};await send({phase:"move",point:cursor});await delay(80);
+    const display=screen.getDisplayNearestPoint(cursor).workArea,b=getRuntime().petWindow.getBounds();
+    assert.ok(b.x>=display.x&&b.y>=display.y&&b.x+b.width<=display.x+display.width&&b.y+b.height<=display.y+display.height);
+    getRuntime().petWindow.webContents.sendInputEvent({type:"keyDown",keyCode:"ESCAPE"});await delay(100);
+    assert.equal(getRuntime().dragPending,false);
+    await send({phase:"start",point:getRuntime().position});await until(()=>getRuntime().dragPending);
+    showChat();await delay(100);assert.equal(getRuntime().dragPending,false);
+    const inChat=getRuntime().position;
+    await send({phase:"start",point:inChat});await send({phase:"move",point:{x:0,y:0}});await delay(100);
+    assert.equal(getRuntime().dragPending,false);assert.deepEqual(getRuntime().position,inChat);
+    restorePetFrame();await delay(100);
+    await send({phase:"start",point:inChat});await until(()=>getRuntime().dragPending);
+    toggleHidden();assert.equal(getRuntime().dragPending,false);toggleHidden();await delay(100);
+    await send({phase:"start",point:getRuntime().position});await until(()=>getRuntime().dragPending);
+    setMode("dodge");assert.equal(getRuntime().dragPending,false);setMode("pet");
   });
   await check("Pet makes a sparse autonomous gesture, rests, and yields to interaction/chat/hide",async()=>{
     setMode("dodge"); setMode("pet"); await delay(150);
@@ -206,14 +306,58 @@ try {
       win.webContents.debugger.detach();
     }
   });
+  await check("Dodge reflex: fast approach launches a visible native window, decays and resets after chat/hide",async()=>{
+    setMode("pet");await delay(150);
+    const origin=getRuntime().position,area=screen.getDisplayNearestPoint(origin).workArea;
+    const target={x:area.x+area.width/2-66,y:area.y+area.height/2-66};
+    for(const request of [{phase:"start",point:origin},{phase:"move",point:target},{phase:"end"}]) {
+      await evaluate("window.bluepet.dragPet("+JSON.stringify(request)+")");await delay(50);
+    }
+    setMode("dodge");
+    const realCursor=screen.getCursorScreenPoint,realAnimations=systemPreferences.getAnimationSettings;
+    const center={x:getRuntime().position.x+66,y:getRuntime().position.y+66};
+    let cursor={x:center.x+230,y:center.y},samples=0;
+    screen.getCursorScreenPoint=()=>{samples++;return {...cursor};};
+    systemPreferences.getAnimationSettings=()=>({...realAnimations.call(systemPreferences),prefersReducedMotion:false});
+    try {
+      await until(()=>samples>=2);
+      const before=getRuntime().petWindow.getBounds();
+      cursor={x:center.x+110,y:center.y};
+      await until(()=>getRuntime().dodgeMotion?.reflex);
+      const initialSpeed=Math.hypot(...Object.values(getRuntime().dodgeMotion.velocity));
+      assert.ok(initialSpeed>600,"fast approaching cursor produces a launch");
+      await until(()=>evaluate("document.querySelector('.mascot-svg').dataset.gait==='run'"));
+      assert.deepEqual(await evaluate("document.querySelector('path.body').getAnimations().map(a=>a.effect.getTiming().duration)"),[220]);
+      await delay(100);
+      assert.ok(getRuntime().petWindow.getBounds().x<before.x-45,"native window visibly travels away");
+      assert.equal(getRuntime().petWindow.isVisible(),true);await visiblePixels();
+      await delay(700);
+      assert.equal(getRuntime().dodgeMotion.reflex,false);
+      assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.gait"),"walk");
+      assert.ok(Math.hypot(...Object.values(getRuntime().dodgeMotion.velocity))<initialSpeed/2);
+      for(const pause of ["chat","hide"]) {
+        if(pause==="chat") showChat(); else toggleHidden();
+        await delay(80);
+        cursor={x:getRuntime().position.x+90,y:getRuntime().position.y+66};
+        if(pause==="chat") restorePetFrame(); else toggleHidden();
+        await delay(80);assert.equal(getRuntime().dodgeMotion.reflex,false,"resume discards stale cursor samples");
+        assert.equal(getRuntime().petWindow.isVisible(),true);
+      }
+      console.log("Dodge launch speed:",Math.round(initialSpeed),"px/s");
+    } finally {
+      screen.getCursorScreenPoint=realCursor;systemPreferences.getAnimationSettings=realAnimations;
+      setMode("dodge");
+    }
+  });
   await check("Dodge stays continuously visible for 10 seconds, and only manual hide conceals it",async()=>{
     setMode("dodge");
     const start=performance.now();
     while(performance.now()-start<10000) {
       await delay(40); assert.equal(getRuntime().petWindow.isVisible(),true);
     }
-    assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.gait"),"walk");
-    assert.deepEqual(await evaluate("document.querySelector('path.body').getAnimations().map(a=>a.effect.getTiming().duration)"),[680]);
+    const gait=await evaluate("document.querySelector('.mascot-svg').dataset.gait");
+    assert.ok(["walk","run"].includes(gait));
+    assert.deepEqual(await evaluate("document.querySelector('path.body').getAnimations().map(a=>a.effect.getTiming().duration)"),[gait==="run"?220:680]);
     await visiblePixels();
     await writeFile(path.resolve("work/dodge-original-shape.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
     toggleHidden(); await delay(3300); assert.equal(getRuntime().petWindow.isVisible(),false);
@@ -230,7 +374,7 @@ try {
   await check("recover unexpected hide, monitor changes, sleep wake, renderer reload and window close",async()=>{
     setMode("pet"); await delay(100); getRuntime().petWindow.hide();
     await until(()=>getRuntime().petWindow.isVisible(),2200); await visiblePixels();
-    getRuntime().petWindow.setBounds({x:-9000,y:-9000,width:144,height:144});
+    getRuntime().petWindow.setBounds({x:-9000,y:-9000,width:132,height:132});
     screen.emit("display-removed",{},screen.getPrimaryDisplay()); await delay(150);
     const b=getRuntime().petWindow.getBounds(),d=screen.getDisplayMatching(b).workArea;
     assert.ok(b.x>=d.x&&b.y>=d.y&&b.x+b.width<=d.x+d.width&&b.y+b.height<=d.y+d.height);
@@ -240,22 +384,38 @@ try {
     await until(()=>getRuntime().petWindow&&getRuntime().petWindow.id!==old&&!getRuntime().petWindow.webContents.isLoading());
     await delay(180);await visiblePixels();
   });
-  await check("Pac-Man still renders, moves, hides/restores and exits",async()=>{
+  await check("Pac-Man: smaller lidless sprite, real bean clears accelerate each round, hide/restore and restart",async()=>{
     setMode("pacman");await until(()=>getRuntime().gameWindow?.isVisible());
     const win=getRuntime().gameWindow;await delay(150);
     const js=code=>win.webContents.executeJavaScript(code);
     await until(()=>js("Boolean(document.querySelector('.mascot-svg'))"));
     assert.equal(await js("document.querySelectorAll('.lid').length"),0,"Pac-Man has no eyelid node");
+    assert.equal(await js("getComputedStyle(document.querySelector('#game-pet')).width"),"64px");
     const before=await js("document.querySelector('#game-pet').style.transform");
     win.webContents.sendInputEvent({type:"keyDown",keyCode:"UP"});await delay(200);
     assert.notEqual(await js("document.querySelector('#game-pet').style.transform"),before);
     assert.ok(parseFloat(await js("document.querySelector('.mascot-svg').style.getPropertyValue('--gaze-y')"))<0);
     await visiblePixels(win);
     const sprite=await js("document.querySelector('#game-pet').getBoundingClientRect().toJSON()");
-    await writeFile(path.resolve("work/pacman-no-lid.png"),(await win.webContents.capturePage({x:Math.round(sprite.x),y:Math.round(sprite.y),width:72,height:72})).toPNG());
+    await writeFile(path.resolve("work/pacman-no-lid.png"),(await win.webContents.capturePage({x:Math.round(sprite.x),y:Math.round(sprite.y),width:64,height:64})).toPNG());
+    // Deterministic two-bean round; real key input and animation frames must eat both.
+    await js("import('./game.js').then(({game})=>{Object.assign(game.pet,{x:200,y:200,vx:0,vy:0});game.pellets=[{x:260,y:200,radius:5,glow:0},{x:340,y:200,radius:5,glow:0}];})");
+    win.webContents.sendInputEvent({type:"keyDown",keyCode:"RIGHT"});
+    await until(()=>js("document.querySelector('#round').textContent==='2'"));
+    assert.deepEqual(await js("import('./game.js').then(({game})=>[game.pet.speed,game.pet.vx,game.pet.vy])"),[300,300,0]);
+    assert.equal(await js("document.querySelector('#speed').textContent"),"1.07×");
+    await js("import('./game.js').then(({game})=>{Object.assign(game.pet,{x:200,y:200,vx:0,vy:0});game.pellets=[{x:260,y:200,radius:5,glow:0},{x:340,y:200,radius:5,glow:0}];})");
+    win.webContents.sendInputEvent({type:"keyDown",keyCode:"RIGHT"});
+    await until(()=>js("document.querySelector('#round').textContent==='3'"));
+    assert.deepEqual(await js("import('./game.js').then(({game})=>[game.pet.speed,game.pet.vx])"),[320,320]);
+    await writeFile(path.resolve("work/pacman-round-3.png"),(await win.webContents.capturePage()).toPNG());
     toggleHidden();assert.equal(win.isVisible(),false);toggleHidden();assert.equal(win.isVisible(),true);
     assert.equal(await js("document.querySelectorAll('.lid').length"),0);
+    assert.equal(await js("document.querySelector('#round').textContent"),"3");
     win.webContents.sendInputEvent({type:"keyDown",keyCode:"ESCAPE"});await delay(180);assert.equal(getRuntime().state.mode,"pet");await visiblePixels();
+    setMode("pacman");await until(()=>getRuntime().gameWindow?.isVisible());await delay(200);
+    assert.equal(await getRuntime().gameWindow.webContents.executeJavaScript("document.querySelector('#speed').textContent"),"1.00×");
+    setMode("pet");
   });
   console.log("Desktop integration checks passed:",results.length);
   await writeFile(path.resolve("work/desktop-test-results.json"),JSON.stringify({passed:results},null,2));

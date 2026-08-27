@@ -39,6 +39,6 @@ export function createEyeMotion(lid, reduced) {
   schedule();
   return {
     setActive(value) { if (value !== active) { active = value; reset(); } },
-    react(kind) { if (["headpat", "nuzzle", "shy"].includes(kind)) play(kind); },
+    react(kind) { if (["headpat", "nuzzle", "shy", "tickle", "cuddle"].includes(kind)) play(kind); },
   };
 }
