@@ -12,6 +12,7 @@
     "src",
     "assets",
     "scripts",
+    "AGENTS.md",
     "LICENSE",
     "README.md"
   ],
@@ -23,7 +24,8 @@
     "icon:tray": "node scripts/build-tray.mjs",
     "icon": "node scripts/build-icon.mjs",
     "pack": "electron-builder --dir",
-    "dist:mac": "electron-builder --mac dmg zip"
+    "dist:mac": "electron-builder --mac dmg zip --publish never",
+    "release:mac": "node scripts/release.mjs"
   },
   "keywords": [
     "desktop-pet",
@@ -34,7 +36,7 @@
   "author": "Blue One-Eye Pet contributors",
   "license": "MIT",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   },
   "devDependencies": {
     "electron": "^44.0.0",

@@ -1,89 +1,97 @@
 # Blue One-Eye Pet
 
-一只会主动让路的蓝色单眼桌面宠物。它平时在桌面散步、躲开光标，也可以固定陪伴、和你说一句悄悄话，或者把当前屏幕变成一局吃豆小游戏。
+一只会主动让路的蓝色单眼桌面宠物。忙的时候陪你工作，闲的时候摸摸头、聊一句，或者吃一屏豆豆。
 
-> 当前 MVP 面向 macOS；源码基于 Electron，后续可以补 Windows / Linux 的安装与开机启动适配。
+![蓝色单眼宠物](assets/blue-one-eye-mascot.svg)
 
-## 桌面模式与小游戏
+当前版本 **0.4.1** · **macOS** · **MIT** · Electron + 原生 JavaScript
 
-- **Dodge（默认）**：持续可见、自由走动，光标慢慢靠近时正常让路，快速逼近时像神经反射一样弹开；逼近越快弹射越强，随后迅速减速恢复散步。短冷却避免连续乱弹，屏幕边缘会转向，不自动消失。系统开启「减少动态效果」时关闭弹射，保留普通避让。窗口点击穿透，不阻挡正常操作。
-- **Pet**：互动与移动合为一体。选择 Pet 或点击宠物后，方向键移动、松键停下；`Esc` 释放键盘焦点，宠物留在原地。切到其他应用不接收方向键，聊天时也不会误移动。无人互动时，每次安静 12–22 秒后短暂张望或伸展。
-- **Pac-Man**：当前屏幕出现遮罩和随机豆豆，用方向键移动，`Esc` 随时退出。每吃完一屏，当前速度乘 1.3（即提速 30%，280 → 364 → 473.2 像素/秒），保持当前方向立即生效；重新开局重置。提示、分数和倍率仅出现在顶部 96px 安全区，宠物和豆豆不会进入提示区。游戏角色不带眼皮。
+## 安装与启动
 
-Pet / Dodge 互相切换不会瞬移：Dodge 平滑起步；回 Pet 时保留惯性，加速靠近上次停留的位置后减速停稳。途中再次切换会从当前速度接续；拖拽、方向键、Esc、聊天或隐藏可以中断过渡。「减少动态效果」下不播放长距离过渡。
+### macOS 应用
 
-桌面移动跟随可见渲染器的 `requestAnimationFrame`，不再受旧 32ms 定时器限制，适配屏幕刷新节奏；静止时不重复移动原生窗口，隐藏/聊天时停止帧请求。独立低频检查仍负责意外隐藏恢复，不会唤醒手动隐藏的宠物。
+使用本地打包产物，或仓库 [Releases](https://github.com/ken0122/hohohuhu/releases) 中实际已发布的附件；此链接不表示当前版本已经发布。
 
-Pet 支持不同部位的反馈，均为短促动作与文字，不播放声音：
+1. Apple Silicon（M 系列）选择 `mac-arm64` 包；Intel 需要单独构建的 `mac-x64` 包，不能混用。
+2. 打开 DMG，将 **Blue One-Eye Pet.app** 拖入「应用程序」；也可解压 ZIP 后移动进去。
+3. 启动后看屏幕顶部菜单栏的白色宠物轮廓图标，Dock 不显示图标。
+4. 可在菜单中开启「登录时自动启动」。退出请使用「退出 Blue One-Eye Pet」，隐藏不会退出后台。
 
-| 操作 | 反馈 |
-| --- | --- |
-| 按住并拖动 | 移动超过 6px 后开始拖拽；松开留在新位置，不触发点击 |
-| 头顶来回摸 | 轻轻眯眼，“摸摸头，好舒服” |
-| 肚子左右挠几下 | 扭动怕痒，“哎呀呀，好痒！” |
-| 点击肚子 | 软软缩一下，“哎呀！戳到肚肚啦” |
-| 点击脸颊 / 停留陪伴 | 贴贴、蹭蹭 |
-| 按住约 0.65 秒 | 抱抱；松开不会再触发戳肚子 |
-| 点击耳朵 / 眼睛附近 | 害羞 / 开心跳一下 |
+应用包自带 Electron，不需要安装 Node.js。当前本地 release 包没有 Developer ID 签名、未经 Apple 公证，macOS 可能阻止首次打开；只运行你确认来源和校验值可信的包，不要关闭系统安全保护。
 
-同类反应有冷却时间；移动、聊天、隐藏会中断互动和自主动作。拖拽时暂停键盘移动和互动，屏幕边缘会限制位置以保持可见；Esc、失去焦点或切换模式会结束拖拽。摸头和挠痒使用不按鼠标的悬停移动，按住不移动仍是抱抱。默认桌面形象为 84px（原 96px），游戏为 64px（原 72px），聊天框和文字不缩小。
+### 命令行安装
 
-模式从 macOS 菜单栏里的单色宠物轮廓图标切换。图标为固定纯白色透明轮廓，没有方框底板，并提供 Retina 素材。点击图标只打开菜单，不会唤醒宠物或呼出聊天；选定具体模式才显示宠物。
-
-直接加载原始 SVG，保持源文件、配色和结构不变，不叠加独立的腿或身体层。走路、跑步只改变原身体路径的下摆形状，停止后恢复原轮廓。
-
-桌面模式默认完全睁眼，每隔约 3.8–7.2 秒短促眨眼一次；情绪眨眼不超过 0.28 秒，连续摸头不会让眼皮一直下垂。游戏仅在运行时移除眼皮节点，原 SVG 文件不变。系统开启「减少动态效果」时停止眨眼与自主小动作。
-
-菜单打开期间暂停移动。`Control + Option + B` 可手动隐藏或恢复；隐藏后不会自行现身。
-
-如果切换显示器或桌面后找不到它，选择菜单「找回宠物到当前屏幕」。休眠恢复、显示器变化和渲染进程重载也有自动恢复处理。
-
-## 安装
-
-需要 Node.js 22+。聊天需在 Claude Code 或 CC Switch 中配置可用的 DeepSeek provider；本机 CC Switch 的配置读取使用系统 `sqlite3`，不写入其数据库。
-
-从下载的 npm 包安装（npm 7+ 会自动安装 Electron peer 依赖）：
+需要 **Node.js 22.12+**、npm，以及首次安装时下载 Electron 的网络连接。下载 `.tgz` 后，在其所在目录执行：
 
 ```bash
 npm install -g ./blue-one-eye-pet-0.4.1.tgz
 bluepet
 ```
 
-从源码开发安装：
+不依赖 npm registry 已发布同名包。npm 7+ 会安装 Electron peer 依赖；`.tgz` 本身不包含 Electron 二进制。
+
+```bash
+bluepet --mode=dodge     # 自由让路，默认模式
+bluepet --mode=pet       # 陪伴、互动与移动
+bluepet --mode=pacman    # 吃豆小游戏
+bluepet --foreground    # 前台运行，方便查看错误
+```
+
+默认启动后脱离终端、常驻后台；已运行时，命令把模式切换交给同一实例。旧参数 `--mode=control` 兼容映射为 Pet。CLI / 源码运行时，「登录时自动启动」不可用，请用打包后的 `.app`。
+
+### 从源码安装
 
 ```bash
 git clone https://github.com/ken0122/hohohuhu.git
 cd hohohuhu
-npm install
+npm ci
 npm link
 bluepet
 ```
 
-`bluepet` 默认脱离终端、常驻后台。调试时可以保留日志：
+`npm link` 让命令行入口指向当前源码目录；不要移动或删除目录。卸载命令行入口使用 `npm uninstall -g blue-one-eye-pet`，再从菜单退出正在运行的实例。
 
-```bash
-bluepet --foreground
-```
+## 三种模式
 
-也可以指定模式：`bluepet --mode=dodge`、`bluepet --mode=pet` 或 `bluepet --mode=pacman`。已运行时会在同一个实例中切换。旧的 `--mode=control` 兼容映射为 Pet，菜单不再单列 Control。
-
-也可以生成 macOS DMG 与 ZIP：
-
-```bash
-npm run dist:mac
-```
-
-打包后的应用可在菜单栏开启“登录时自动启动”。
-
-## 快捷键
-
-| 操作 | 默认快捷键 | 说明 |
+| 模式 | 行为 | 操作 |
 | --- | --- | --- |
-| 立即隐藏 / 恢复 | `⌃⌥B` | 避开 `⌘H`、`⌘Space` 等高频系统组合 |
-| 呼出聊天气泡 | `⌃⌥Space` | 气泡出现在宠物头顶 |
-| 循环切换模式 | `⌃⌥⌘M` | Dodge → Pet → Pac-Man → Dodge；400ms 防连发，隐藏时不响应 |
+| Dodge · 自由让路 | 自主散步、点击穿透；光标慢慢靠近就让路，快速逼近会弹开再减速，不自动消失 | 正常使用桌面即可 |
+| Pet · 互动与移动 | 留在身边，可以拖动、亲昵互动；安静 12–22 秒后偶尔张望或伸展 | 鼠标互动；选 Pet 或点击后用方向键移动，松键停止；Esc 释放键盘焦点 |
+| Pac-Man · 吃颗豆豆 | 当前屏幕出现遮罩和随机豆豆，每清完一屏，速度再乘 **1.3** | 方向键移动，Esc 退出并回到 Pet |
 
-如本机已有软件占用，可在启动前修改：
+Pet / Dodge 互相切换保留物理惯性：平滑起步，回到上次 Pet 停留位置时减速停稳；拖拽、方向键、聊天和隐藏可中断过渡。桌面原生窗口移动跟随屏幕渲染帧，按经过时间计算速度。
+
+Pac-Man 初始速度 280 px/s，之后为 364、473.2……，不是每屏固定加 30% 初始速度；重新开局重置。顶部 96px 留给分数、倍率与操作提示，宠物和豆豆不会进入该区域。游戏角色没有眼皮。
+
+### Pet 怎么玩
+
+| 操作 | 小反应 |
+| --- | --- |
+| 按住并拖动 | 移动超过 6px 开始拖拽，松开停在新位置 |
+| 不按鼠标，在头顶来回摸 | 短暂眯眼，“摸摸头，好舒服” |
+| 不按鼠标，在肚子左右挠 | 扭动怕痒，“哎呀呀，好痒！” |
+| 点击肚子 | 软软缩一下，“哎呀！戳到肚肚啦” |
+| 点击脸颊 / 停留陪伴 | 贴贴、蹭蹭 |
+| 按住约 0.65 秒，不拖动 | 抱抱 |
+| 点击耳朵 / 眼睛附近 | 害羞 / 开心跳一下 |
+
+反应有冷却，不播放声音。拖拽不会同时触发点击或抱抱；Esc、失焦、切换模式会结束拖拽。切到其他应用后不接收方向键，聊天输入时也不会误移动。
+
+保持原 SVG 的轮廓、配色和结构，不加腿或身体图层；行走与奔跑只改变原身体路径的形状。桌面角色 84px、游戏 64px。桌面眼睛大多数时间睁开，每隔约 3.8–7.2 秒短促眨眼；系统「减少动态效果」会关闭弹射、眨眼及自主小动作，保留普通避让。
+
+## 快捷键与菜单
+
+`⌃` 是 Control，`⌥` 是 Option，`⌘` 是 Command。
+
+| 操作 | 默认快捷键 |
+| --- | --- |
+| 立即隐藏 / 恢复 | **⌃⌥B** |
+| 呼出头顶聊天气泡 | **⌃⌥Space** |
+| Dodge → Pet → Pac-Man → Dodge 循环切换 | **⌃⌥⌘M** |
+
+循环键有 400ms 防连发，手动隐藏时不响应。单纯打开菜单不会显示宠物；明确选择模式、聊天或「找回宠物到当前屏幕」会显示。隐藏后不会自行现身。
+
+默认组合避开常见系统快捷键，但无法保证不与第三方软件自定义快捷键冲突。注册失败会通知，仍可从菜单操作。要改快捷键，先退出当前实例，再从终端启动：
 
 ```bash
 BLUEPET_HIDE_SHORTCUT="Control+Alt+H" \
@@ -92,36 +100,79 @@ BLUEPET_MODE_SHORTCUT="Control+Alt+Command+N" \
 bluepet
 ```
 
-Electron 快捷键格式参见 `globalShortcut` 的 Accelerator 语法。循环键使用 Control + Option + Command + M，避开常用单/双修饰键组合；无法保证所有第三方软件均未自定义占用。注册失败时应用会发送系统通知，不覆盖已有快捷键，仍可使用菜单切换。
+这些环境变量作用于本次启动；给已运行实例再次传入环境变量不会重新注册快捷键。
 
-## 快速宠物聊天
+## 聊天与隐私
 
-固定使用 `deepseek-v4-flash`，关闭思考（`thinking.type=disabled`），思考等级参数设为最低 `low`。配置依据：[DeepSeek 思考参数](https://api-docs.deepseek.com/guides/thinking_mode/)。直接请求 DeepSeek 的 Anthropic 兼容接口，省去每条消息启动 Claude Code CLI 的开销；不带工具、不保存历史。宠物系统提示词位于 `src/chat.js`。
+当前固定使用 **`deepseek-v4-flash`**，关闭思考（`thinking.type=disabled`），effort 参数为最低 `low`。直接从主进程请求 DeepSeek 的 Anthropic 兼容接口，不为每次聊天启动 Claude Code CLI，也不会跟随本地配置中的其他模型名。
 
-凭证只在主进程内读取和使用：先检查进程内 DeepSeek 环境变量，再读 CC Switch 当前选中的 Claude provider，最后检查 Claude Code 用户 `settings.json`（支持 `CLAUDE_CONFIG_DIR`）。只接受官方 `https://api.deepseek.com`，不会拿其他 provider 的密钥请求 DeepSeek，也不会修改全局 Claude Code / CC Switch 配置。未找到可用配置时会报错，不悄悄回退到其他模型。
+只读复用本机 DeepSeek provider 凭据，按顺序寻找可用配置：
 
-为了避免浮窗变成长对话：
+1. 进程环境里的 `ANTHROPIC_BASE_URL` 和 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`。
+2. CC Switch 当前选中的 Claude provider（系统 `sqlite3` 只读查询）。
+3. Claude Code 用户 `settings.json` 的 `env`（支持 `CLAUDE_CONFIG_DIR`）。
 
-- 输入最多 500 字；
-- 系统提示要求只回一句；
-- 应用端再次限制为最多 50 个可见字符，超长时优先在标点/空格收尾并加省略号；
-- 单次请求 15 秒超时。
+只接受官方 `https://api.deepseek.com`，不会把其他 provider 的密钥发送给 DeepSeek；未找到配置会提示错误，不自动换模型。普通陪伴和游戏不需要任何模型配置。
 
-原 `BLUEPET_CLAUDE_PATH` 不再需要；不要把密钥写入仓库或安装包。
+聊天会把你输入的文字和固定宠物系统提示词发送到 DeepSeek；应用不保存聊天历史。凭据只在主进程内使用，不进入 renderer、日志或安装包，也不修改 Claude Code / CC Switch 全局配置。输入最多 500 字符，回复最多 50 个可见字符，单次请求 15 秒超时。提示词在 `src/chat.js`；旧 `BLUEPET_CLAUDE_PATH` 不再使用。
 
-## 开发
+## 常见问题
+
+- **没看到 Dock 图标？** 这是菜单栏常驻应用，Dock 图标默认隐藏。菜单栏图标是无底板的固定白色轮廓，浅色背景上可能不明显。
+- **找不到宠物？** 先按 `⌃⌥B`，或从菜单选择「找回宠物到当前屏幕」。换显示器、休眠恢复有自动恢复处理；手动隐藏除外。
+- **Pet 方向键没反应？** 先切到 Pet 或点击它获取焦点；Esc 和切到别的应用会释放控制。
+- **聊天报 provider 错误？** 确认上述来源中有有效的官方 DeepSeek 配置；当前版本不支持任意 Claude provider。不要把密钥粘贴到 issue 或日志中。
+- **`bluepet: command not found`？** 执行 `npm prefix -g`，确认其 `bin` 目录在 PATH；源码安装确认执行过 `npm link`。
+- **升级后仍是旧行为？** 从菜单退出旧实例，安装新包再启动；后台实例不会在文件更新后自动重载。不要同时运行源码版和应用版。
+
+## 开发与验证
+
+贡献前阅读 [AGENTS.md](AGENTS.md)。目前实际验证平台为 macOS；没有 Windows / Linux 安装、开机启动或交互验收承诺。
 
 ```bash
-npm start
-npm test
-npm run test:desktop
-npm run pack
+npm ci
+npm start               # 前台开发运行
+npm test                # Node 单测，无真实模型请求
+npm run test:desktop    # 真实 Electron 窗口回归
+npm run pack            # 本机架构 .app，输出 dist/
 ```
 
-核心进程只向渲染层暴露最小 IPC 接口，所有窗口启用 `contextIsolation`、`sandbox` 并关闭 `nodeIntegration`。聊天 HTTP 与凭证读取均在主进程，密钥不传入渲染层、不打印日志，拒绝 HTTP 重定向。
+桌面测试需要 macOS 图形会话，并会操作窗口与焦点；先从菜单退出运行中的宠物，测试后自行重启。结果写入被 Git 忽略的 `work/`。`BLUEPET_TEST_MATCH` 可按名称筛选测试；只有显式设置 `BLUEPET_TEST_CHAT=1` 才会发送一条真实模型问候。焦点被其他应用抢走可能影响键盘测试；筛选通过不代表完整回归通过。
 
-桌面集成测试需要 macOS 图形会话；先退出已运行的宠物，以免测试快捷键与正式实例冲突。测试创建真实窗口，验证原 SVG、路径形变、像素可见性、方向键、惯性切换和恢复流程，结果仅保存到被 Git 忽略的 `work/`。默认不请求模型；显式设置 `BLUEPET_TEST_CHAT=1` 才会发送一条真实问候，验证聊天气泡。
+主进程负责窗口、输入与 HTTP；renderer 使用最小 IPC。所有窗口保持 `contextIsolation`、`sandbox`，关闭 `nodeIntegration`。逻辑回归在 `test/`，真实窗口检查在 `scripts/desktop-test.mjs`。
+
+## Release 打包
+
+在 macOS 源码目录执行：
+
+```bash
+npm ci
+npm run release:mac
+```
+
+命令先检查版本一致性、差异格式并运行单测，再生成**当前 Node 运行架构**的产物。Apple Silicon 请使用 arm64 Node；Intel 使用 x64 Node。本轮交付仅验证 arm64。
+
+每次创建独立的 `outputs/releases/v0.4.1-mac-<arch>-<随机后缀>/`，不覆盖旧包：
+
+| 文件 | 用途 |
+| --- | --- |
+| `Blue-One-Eye-Pet-0.4.1-mac-<arch>-unsigned.dmg` | 拖入 Applications 安装 |
+| `Blue-One-Eye-Pet-0.4.1-mac-<arch>-unsigned.zip` | 解压即得应用 |
+| `blue-one-eye-pet-0.4.1.tgz` | npm 命令行安装 |
+| `SHA256SUMS` | 三个安装包的 SHA-256 校验值 |
+| `RELEASE.md` | 基础提交、未提交状态、构建范围与安装说明 |
+| `README.md` / `AGENTS.md` / `LICENSE` | 使用手册、协作指南与 MIT 协议副本 |
+
+在产物目录校验：
+
+```bash
+shasum -a 256 -c SHA256SUMS
+```
+
+脚本同时检查 DMG / ZIP 完整性和 npm 包文件清单。打包不会运行桌面交互测试、请求聊天、签署 Developer ID、进行 Apple 公证、创建 Git tag，或上传 GitHub / npm。`RELEASE.md` 会明确标记未提交工作区，公开发布前应完成代码提交、桌面验收和签名策略确认。
+
+只需要原始 DMG / ZIP 构建可用 `npm run dist:mac`，输出 `dist/`；完整交付用 `release:mac`。`dist/`、`work/`、`outputs/` 和安装包都不入 Git。
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](LICENSE)
