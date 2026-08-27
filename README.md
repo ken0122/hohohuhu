@@ -114,7 +114,7 @@ bluepet
 
 只接受官方 `https://api.deepseek.com`，不会把其他 provider 的密钥发送给 DeepSeek；未找到配置会提示错误，不自动换模型。普通陪伴和游戏不需要任何模型配置。
 
-聊天会把你输入的文字和固定宠物系统提示词发送到 DeepSeek；应用不保存聊天历史。凭据只在主进程内使用，不进入 renderer、日志或安装包，也不修改 Claude Code / CC Switch 全局配置。输入最多 500 字符，回复最多 50 个可见字符，单次请求 15 秒超时。提示词在 `src/chat.js`；旧 `BLUEPET_CLAUDE_PATH` 不再使用。
+聊天会把你输入的文字和固定宠物系统提示词发送到 DeepSeek；每次请求不附带历史消息，也不将对话写入文件。当前气泡的回复会留在内存中，关闭再打开仍可能看到上次回复；关闭气泡不会取消已发送的请求。凭据只在主进程内使用，不进入 renderer、日志或安装包，也不修改 Claude Code / CC Switch 全局配置。输入最多 500 个 UTF-16 代码单元（部分 emoji 会占多个单位），回复最多 50 个可见字符；HTTP 请求 15 秒超时，不含此前本机配置查找时间。提示词在 `src/chat.js`；旧 `BLUEPET_CLAUDE_PATH` 不再使用。
 
 ## 常见问题
 
@@ -125,9 +125,16 @@ bluepet
 - **`bluepet: command not found`？** 执行 `npm prefix -g`，确认其 `bin` 目录在 PATH；源码安装确认执行过 `npm link`。
 - **升级后仍是旧行为？** 从菜单退出旧实例，安装新包再启动；后台实例不会在文件更新后自动重载。不要同时运行源码版和应用版。
 
+### 已知限制
+
+- **游戏窗口缩小后可能无法清屏。** 切换到较小显示器或降低分辨率后，现有豆豆不会随窗口重新布局，可能留在屏幕外。可从菜单重新选择 Pac-Man 开局，分数和倍率会重置。
+- **游戏窗口意外隐藏不会被定时 watchdog 找回。** 当前 500ms 检查仅覆盖桌面宠物窗口。可按隐藏 / 恢复快捷键或从菜单找回；手动隐藏不会自动恢复，这是预期行为。
+- **游戏中途修改「减少动态效果」时，豆豆呼吸不会立即更新。** 该设置在游戏加载时读取，重开游戏后生效；宠物形变和眼睛动画另有动态监听。
+- **聊天错误统一显示。** 当前气泡不区分凭证错误、限流、超时和网络失败，不应仅凭提示断定是哪一种原因。
+
 ## 开发与验证
 
-贡献前阅读 [AGENTS.md](AGENTS.md)。目前实际验证平台为 macOS；没有 Windows / Linux 安装、开机启动或交互验收承诺。
+贡献前阅读 [AGENTS.md](AGENTS.md)，当前视觉与交互约束见源码仓库内的 `DESIGN.md`（不随安装包分发）；`PRODUCT.md` 是早期构想，不是当前功能清单。目前实际验证平台为 macOS；没有 Windows / Linux 安装、开机启动或交互验收承诺。
 
 ```bash
 npm ci
@@ -137,7 +144,7 @@ npm run test:desktop    # 真实 Electron 窗口回归
 npm run pack            # 本机架构 .app，输出 dist/
 ```
 
-桌面测试需要 macOS 图形会话，并会操作窗口与焦点；先从菜单退出运行中的宠物，测试后自行重启。结果写入被 Git 忽略的 `work/`。`BLUEPET_TEST_MATCH` 可按名称筛选测试；只有显式设置 `BLUEPET_TEST_CHAT=1` 才会发送一条真实模型问候。焦点被其他应用抢走可能影响键盘测试；筛选通过不代表完整回归通过。
+桌面测试需要 macOS 图形会话，并会操作窗口与焦点；先从菜单退出运行中的宠物，测试后自行重启。截图写入被 Git 忽略的 `work/`，仅在本轮所选用例全部成功后写入 `desktop-test-results.json`；失败时旧结果文件可能仍在，不能用它判定本轮通过。`BLUEPET_TEST_MATCH` 可按名称筛选测试；只有显式设置 `BLUEPET_TEST_CHAT=1` 才会发送一条真实模型问候。焦点被其他应用抢走可能影响键盘、长按和拖拽测试；套件遇错立即退出，后续用例尚未执行，筛选通过不代表完整回归通过。
 
 主进程负责窗口、输入与 HTTP；renderer 使用最小 IPC。所有窗口保持 `contextIsolation`、`sandbox`，关闭 `nodeIntegration`。逻辑回归在 `test/`，真实窗口检查在 `scripts/desktop-test.mjs`。
 
@@ -150,7 +157,7 @@ npm ci
 npm run release:mac
 ```
 
-命令先检查版本一致性、差异格式并运行单测，再生成**当前 Node 运行架构**的产物。Apple Silicon 请使用 arm64 Node；Intel 使用 x64 Node。本轮交付仅验证 arm64。
+命令先检查 `package.json` 与 `package-lock.json` 的版本一致性、差异格式并运行单测，再生成**当前 Node 运行架构**的产物；README 版本号仍需人工同步核对。Apple Silicon 请使用 arm64 Node；Intel 使用 x64 Node。已有本机交付验证范围为 arm64，具体以对应产物的 `RELEASE.md` 和验收记录为准。
 
 每次创建独立的 `outputs/releases/v0.4.1-mac-<arch>-<随机后缀>/`，不覆盖旧包：
 
