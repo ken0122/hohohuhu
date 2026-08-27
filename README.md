@@ -6,7 +6,7 @@
 
 显示名称为「呼噜呼噜」；npm 包名 `blue-one-eye-pet`、命令 `bluepet` 与应用标识保持兼容。
 
-当前版本 **0.4.2** · **macOS** · **MIT** · Electron + 原生 JavaScript
+当前版本 **0.4.3** · **macOS** · **MIT** · Electron + 原生 JavaScript
 
 ## 安装与启动
 
@@ -26,7 +26,7 @@
 需要 **Node.js 22.12+**、npm，以及首次安装时下载 Electron 的网络连接。下载 `.tgz` 后，在其所在目录执行：
 
 ```bash
-npm install -g ./blue-one-eye-pet-0.4.2.tgz
+npm install -g ./blue-one-eye-pet-0.4.3.tgz
 bluepet
 ```
 
@@ -112,22 +112,28 @@ bluepet
 
 当前固定使用 **`deepseek-v4-flash`**，关闭思考（`thinking.type=disabled`），effort 参数为最低 `low`。直接从主进程请求 DeepSeek 的 Anthropic 兼容接口，不为每次聊天启动 Claude Code CLI，也不会跟随本地配置中的其他模型名。
 
-只读复用本机 DeepSeek provider 凭据，按顺序寻找可用配置：
+从状态栏菜单打开「API 设置…」，填写 API Key 和 Base URL 后保存，下次聊天立即生效，无需重启。Base URL 支持 `https://api.deepseek.com` 或 `https://api.deepseek.com/anthropic`，统一使用 Anthropic 兼容接口，不支持第三方代理。保存不会发起连接测试。
 
-1. 进程环境里的 `ANTHROPIC_BASE_URL` 和 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`。
-2. CC Switch 当前选中的 Claude provider（系统 `sqlite3` 只读查询）。
-3. Claude Code 用户 `settings.json` 的 `env`（支持 `CLAUDE_CONFIG_DIR`）。
+密钥通过 Electron `safeStorage` 使用 macOS 系统加密，密文保存在应用 userData 的 `api-settings.enc` 文件中；系统加密不可用时拒绝保存，不降级为明文。已保存密钥不会回填页面；留空保留、输入新值替换。「清除本机配置」会删除此文件，恢复自动查找。关闭或 Esc 放弃未保存输入，不影响宠物的手动隐藏状态。
+
+按顺序寻找可用配置：
+
+1. 在「API 设置」中保存的本机配置。
+
+2. 进程环境里的 `ANTHROPIC_BASE_URL` 和 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`。
+3. CC Switch 当前选中的 Claude provider（系统 `sqlite3` 只读查询）。
+4. Claude Code 用户 `settings.json` 的 `env`（支持 `CLAUDE_CONFIG_DIR`）。
 
 只接受官方 `https://api.deepseek.com`，不会把其他 provider 的密钥发送给 DeepSeek；未找到配置会提示错误，不自动换模型。普通陪伴和游戏不需要任何模型配置。
 
-聊天会把你输入的文字和固定宠物系统提示词发送到 DeepSeek；每次请求不附带历史消息，也不将对话写入文件。当前气泡的回复会留在内存中，关闭再打开仍可能看到上次回复；关闭气泡不会取消已发送的请求。凭据只在主进程内使用，不进入 renderer、日志或安装包，也不修改 Claude Code / CC Switch 全局配置。输入最多 500 个 UTF-16 代码单元（部分 emoji 会占多个单位），回复最多 50 个可见字符；HTTP 请求 15 秒超时，不含此前本机配置查找时间。提示词在 `src/chat.js`；旧 `BLUEPET_CLAUDE_PATH` 不再使用。
+聊天会把你输入的文字和固定宠物系统提示词发送到 DeepSeek；每次请求不附带历史消息，也不将对话写入文件。当前气泡的回复会留在内存中，关闭再打开仍可能看到上次回复；关闭气泡不会取消已发送的请求。已保存和自动发现的凭据只在主进程内使用，不回传 renderer、不进入日志或安装包；设置窗口仅临时接收用户输入的新密钥，提交后清空，也不修改 Claude Code / CC Switch 全局配置。输入最多 500 个 UTF-16 代码单元（部分 emoji 会占多个单位），回复最多 50 个可见字符；HTTP 请求 15 秒超时，不含此前本机配置查找时间。提示词在 `src/chat.js`；旧 `BLUEPET_CLAUDE_PATH` 不再使用。
 
 ## 常见问题
 
 - **没看到 Dock 图标？** 这是菜单栏常驻应用，Dock 图标默认隐藏。菜单栏图标是无底板的模板轮廓，由 macOS 随菜单栏明暗自动着色，与系统图标保持一致。
 - **找不到宠物？** 先按 `⌃⌥B`，或从菜单选择「找回宠物到当前屏幕」。换显示器、休眠恢复有自动恢复处理；手动隐藏除外。
 - **Pet 方向键没反应？** 先切到 Pet 或点击它获取焦点；Esc 和切到别的应用会释放控制。
-- **聊天报 provider 错误？** 确认上述来源中有有效的官方 DeepSeek 配置；当前版本不支持任意 Claude provider。不要把密钥粘贴到 issue 或日志中。
+- **聊天报 provider 错误？** 可先从菜单「API 设置…」填写有效的官方 DeepSeek 配置；当前版本不支持任意 Claude provider。不要把密钥粘贴到 issue 或日志中。
 - **`bluepet: command not found`？** 执行 `npm prefix -g`，确认其 `bin` 目录在 PATH；源码安装确认执行过 `npm link`。
 - **升级后仍是旧行为？** 从菜单退出旧实例，安装新包再启动；后台实例不会在文件更新后自动重载。不要同时运行源码版和应用版。
 
@@ -165,13 +171,13 @@ npm run release:mac
 
 命令先检查 `package.json` 与 `package-lock.json` 的版本一致性、差异格式并运行单测，再生成**当前 Node 运行架构**的产物；README 版本号仍需人工同步核对。Apple Silicon 请使用 arm64 Node；Intel 使用 x64 Node。已有本机交付验证范围为 arm64，具体以对应产物的 `RELEASE.md` 和验收记录为准。
 
-每次创建独立的 `outputs/releases/v0.4.2-mac-<arch>-<随机后缀>/`，不覆盖旧包：
+每次创建独立的 `outputs/releases/v0.4.3-mac-<arch>-<随机后缀>/`，不覆盖旧包：
 
 | 文件 | 用途 |
 | --- | --- |
-| `呼噜呼噜-0.4.2-mac-<arch>-unsigned.dmg` | 拖入 Applications 安装 |
-| `呼噜呼噜-0.4.2-mac-<arch>-unsigned.zip` | 解压即得应用 |
-| `blue-one-eye-pet-0.4.2.tgz` | npm 命令行安装 |
+| `呼噜呼噜-0.4.3-mac-<arch>-unsigned.dmg` | 拖入 Applications 安装 |
+| `呼噜呼噜-0.4.3-mac-<arch>-unsigned.zip` | 解压即得应用 |
+| `blue-one-eye-pet-0.4.3.tgz` | npm 命令行安装 |
 | `SHA256SUMS` | 三个安装包的 SHA-256 校验值 |
 | `RELEASE.md` | 基础提交、未提交状态、构建范围与安装说明 |
 | `README.md` / `AGENTS.md` / `LICENSE` | 使用手册、协作指南与 MIT 协议副本 |

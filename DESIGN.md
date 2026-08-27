@@ -2,6 +2,9 @@
 name: 呼噜呼噜
 description: 透明桌面上的蓝色单眼小伙伴，先让路，再卖萌。
 colors:
+  settings-muted: "#52618a"
+  settings-border: "#c4cee9"
+  settings-error: "#a12635"
   blue: "#4569df"
   blue-dark: "#2949b6"
   ink: "#17234b"
@@ -24,6 +27,8 @@ colors:
   pellet: "#fff0a6"
   power-pellet: "#ffda67"
 typography:
+  settings-title:
+    fontSize: "22px"
   body:
     fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif'
     fontSize: "13px"
@@ -87,7 +92,7 @@ components:
 
 # Design System: 呼噜呼噜
 
-本文对照 **0.4.2** 源码维护当前视觉与交互约束，不代表本轮已完成所有桌面验收。尺寸以 `src/core.js`、`src/main.js`、`src/renderer/game-state.js` 和对应 CSS 为准；使用与发布说明见 `README.md`。`PRODUCT.md` 是早期构想，不作为当前功能清单。
+本文对照 **0.4.3** 源码维护当前视觉与交互约束，不代表本轮已完成所有桌面验收。尺寸以 `src/core.js`、`src/main.js`、`src/renderer/game-state.js` 和对应 CSS 为准；使用与发布说明见 `README.md`。`PRODUCT.md` 是早期构想，不作为当前功能清单。
 
 ## Overview
 
@@ -179,3 +184,7 @@ HUD 不承担模式导航。过关提示在 HUD 内淡入淡出，持续 2.4 秒
 - Don't 把宠物包进常驻卡片、工具栏或应用窗口外壳。
 - Don't 将 SVG 角色内部渐变替换成通用按钮配色。
 - Don't 添加未实现的导航、卡片库、手机断点或状态能力。
+
+### API Settings
+
+状态栏「API 设置…」打开独立 480×510 逻辑像素的原生窗口，复用奶白背景、墨蓝文字、系统字体与蓝色主按钮。不改变宠物模式或手动隐藏状态。页面仅含 Base URL、密码类型的 API Key、状态提示及清除 / 关闭 / 保存操作。已保存密钥不回显，留空保留；保存后清空输入，错误在表单中播报。关闭与 Esc 放弃未保存内容。只支持官方 DeepSeek HTTPS 地址，保存不等于连接验证。

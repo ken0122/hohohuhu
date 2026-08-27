@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, screen, systemPreferences, Tray } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, screen, systemPreferences, safeStorage, Tray } from "electron";
 import { CHAT_OFFSET, chatFrame, chatMotionBounds, cursorInSpeech, controlVelocity, fitPet, MODES, petShouldShow, normalizeMode, nextMode, PET_FRAME_SIZE, PET_SPRITE_SIZE, validDragPoint, dragPosition } from "./core.js";
+import { createApiSettingsStore } from "./api-settings.js";
+import { loadChatProvider } from "./chat-provider.js";
 import { askClaude } from "./chat.js";
 import { createDodgeMotion } from "./dodge.js";
 import { arriveAt, launchVelocity } from "./mode-motion.js";
@@ -16,7 +18,7 @@ const MODE_SHORTCUT = process.env.BLUEPET_MODE_SHORTCUT || "Control+Alt+Command+
 const requestedMode = normalizeMode(process.argv.find(arg => arg.startsWith("--mode="))?.split("=")[1]);
 const initialMode = Object.values(MODES).includes(requestedMode) ? requestedMode : MODES.DODGE;
 const state = { mode: initialMode, manualHidden: false, chatOpen: false, controlActive: false };
-let petWindow, gameWindow, tray, trayMenu, loop;
+let petWindow, gameWindow, settingsWindow, apiSettingsStore, tray, trayMenu, loop;
 let petReady = false, quitting = false, menuOpen = false;
 let position = { x: 80, y: 160 }, velocity = { x: 48, y: 25 };
 let lastTick = performance.now(), lastProximity = 0,lastCycle=-Infinity;
@@ -333,6 +335,37 @@ function createPetWindow() {
   });
   win.loadFile(path.join(dirname, "renderer/pet.html"));
 }
+function showApiSettings() {
+  endPetDrag(); stopControl();
+  if (settingsWindow) { settingsWindow.show(); settingsWindow.focus(); return; }
+  const win = new BrowserWindow({ width: 480, height: 510, resizable: false, maximizable: false,
+    title: "API 设置 · 呼噜呼噜", backgroundColor: "#fbfcff", show: false,
+    webPreferences: { preload: path.join(dirname, "settings-preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false } });
+  settingsWindow = win;
+  win.setAlwaysOnTop(true, "screen-saver", 1);
+  // The tray app has no application menu, so supply standard editing shortcuts here.
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || !(process.platform === "darwin" ? input.meta : input.control) || input.alt) return;
+    const action = { a: "selectAll", c: "copy", v: "paste", x: "cut", z: input.shift ? "redo" : "undo" }[input.key.toLowerCase()];
+    if (action) { event.preventDefault(); win.webContents[action](); }
+  });
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", event => event.preventDefault());
+  win.once("ready-to-show", () => { win.show(); win.focus(); });
+  win.on("closed", () => { settingsWindow = undefined; });
+  win.loadFile(path.join(dirname, "renderer/settings.html"));
+}
+function fromSettings(event) {
+  return event.sender === settingsWindow?.webContents && event.senderFrame === settingsWindow.webContents.mainFrame;
+}
+for (const [channel, method] of [["load", "status"], ["save", "save"], ["clear", "clear"]]) {
+  ipcMain.handle("settings:" + channel, (event, value) => {
+    if (!fromSettings(event)) return { ok: false, error: "无效的设置窗口。" };
+    try { return { ok: true, value: apiSettingsStore[method](value) }; }
+    catch (error) { return { ok: false, error: error.message }; }
+  });
+}
+ipcMain.on("settings:close", event => { if (fromSettings(event)) settingsWindow.close(); });
 function rebuildTrayMenu() {
   if (!tray || quitting) return;
   trayMenu = Menu.buildFromTemplate([
@@ -346,6 +379,7 @@ function rebuildTrayMenu() {
     { type: "separator" },
     { label: "登录时自动启动", type: "checkbox", checked: app.getLoginItemSettings().openAtLogin, enabled: app.isPackaged,
       click: item => app.setLoginItemSettings({ openAtLogin: item.checked }) },
+    { id: "api-settings", label: "API 设置…", click: showApiSettings },
     { id: "quit", label: "退出呼噜呼噜", click: () => app.quit() },
   ]);
   trayMenu.on("menu-will-show", () => { menuOpen = true; dodge.reset(); endPetDrag(); stopControl(); });
@@ -372,7 +406,7 @@ ipcMain.handle("mascot:source", event => {
 ipcMain.on("pet:ready", event => { if (fromPet(event)) { petReady = true; syncPet(); } });
 ipcMain.on("pet:frame",event=>{if(fromPet(event))tick();});
 function fromPet(event) { return event.sender === petWindow?.webContents && event.senderFrame === petWindow.webContents.mainFrame; }
-ipcMain.handle("chat:send", (event, prompt) => { if (!fromPet(event)) throw new Error("Invalid sender"); return askClaude(prompt); });
+ipcMain.handle("chat:send", (event, prompt) => { if (!fromPet(event)) throw new Error("Invalid sender"); return askClaude(prompt, { provider: () => apiSettingsStore.provider() || loadChatProvider() }); });
 ipcMain.on("chat:dismiss", event => { if (fromPet(event)) restorePetFrame(); });
 ipcMain.on("pet:focus", event => { if (fromPet(event) && state.mode === MODES.PET && !state.chatOpen && !state.manualHidden) syncPet({ focus: true }); });
 ipcMain.on("pet:drag", handlePetDrag);
@@ -393,6 +427,7 @@ export const ready = app.whenReady().then(() => {
   if (!hasLock) return;
   if (process.platform === "darwin") app.dock.hide();
   Menu.setApplicationMenu(null);
+  apiSettingsStore = createApiSettingsStore({ directory: app.getPath("userData"), secureStorage: safeStorage });
   pinPet(); createPetWindow();
   const trayImage = nativeImage.createFromPath(path.join(dirname, "../assets/tray.png"));
   // macOS owns the tint, including light/dark menu bars and selected menus.
@@ -421,7 +456,7 @@ app.on("will-quit", () => globalShortcut.unregisterAll());
 app.on("window-all-closed", () => {});
 
 // Test code runs in the main process; this API is not exposed to renderers or a port.
-export function getRuntime() { return { state: { ...state }, position: { ...position }, velocity:{...velocity}, modeTransition, petHome, petWindow, gameWindow, tray, trayMenu, menuOpen, ignoringMouse, hiding:Boolean(hideAnimation), dragPending: Boolean(dragSession), dodgeMotion }; }
+export function getRuntime() { return { state: { ...state }, position: { ...position }, velocity:{...velocity}, modeTransition, petHome, petWindow, gameWindow, settingsWindow, tray, trayMenu, menuOpen, ignoringMouse, hiding:Boolean(hideAnimation), dragPending: Boolean(dragSession), dodgeMotion }; }
 export function shutdown(code = 0) { prepareQuit(); globalShortcut.unregisterAll(); app.exit(code); }
 process.once("SIGTERM", () => shutdown());
 process.once("SIGINT", () => shutdown());

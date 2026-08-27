@@ -42,8 +42,8 @@
 
 - 保持 `contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`；IPC 校验来源及输入，不向 renderer 暴露通用文件、进程或网络能力。
 - 当前固定 `deepseek-v4-flash`，关闭 thinking，effort 为 `low`；不是每条消息启动 Claude CLI，也不自动跟随其他 provider 的模型名。
-- 配置优先级：有效 DeepSeek 进程环境 → CC Switch 当前 Claude provider（SQLite 只读）→ Claude Code 用户 settings（支持 `CLAUDE_CONFIG_DIR`）。只向官方 HTTPS DeepSeek 域名发送对应密钥，拒绝重定向。
-- 不修改用户全局配置；密钥不落库、不复制进项目、不进日志、renderer、测试快照或安装包。测试用虚构凭证和 mock provider。
+- 配置优先级：状态栏 API 设置中的本机配置 → 有效 DeepSeek 进程环境 → CC Switch 当前 Claude provider（SQLite 只读）→ Claude Code 用户 settings（支持 `CLAUDE_CONFIG_DIR`）。只向官方 HTTPS DeepSeek 域名发送对应密钥，拒绝重定向。
+- 不修改用户全局配置；API 设置中的密钥经系统 safeStorage 加密后保存于 userData，不可降级为明文；已保存密钥不回传 renderer，新输入密钥提交后清空。密钥不落库、不复制进项目、不进日志、测试快照或安装包。测试用虚构凭证和 mock provider。
 - 输入上限 500 个 UTF-16 代码单元（与 HTML maxlength / JS slice 一致），回复最多 50 个可见字符；单句宠物提示词、160 token 预算、HTTP 请求 15 秒超时，不持久化对话历史，也不发送历史消息。关闭气泡当前不取消已发出的请求。
 
 ## 验证与交付
