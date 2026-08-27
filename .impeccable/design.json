@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-27T04:12:01Z",
+  "title": "Design System: Blue One-Eye Pet",
+  "extensions": {
+    "shadows": [
+      { "name": "speech", "value": "0 14px 34px rgba(22, 39, 91, .22), 0 3px 8px rgba(22, 39, 91, .12)", "purpose": "奶白聊天气泡的柔和浮起感。" },
+      { "name": "send", "value": "0 7px 14px rgba(45, 74, 180, .24)", "purpose": "发送动作的短蓝色阴影。" },
+      { "name": "hud", "value": "0 14px 32px rgba(0, 0, 0, .32)", "purpose": "游戏计分条。" }
+    ],
+    "motion": [
+      { "name": "character-response", "value": "320ms cubic-bezier(.16, 1, .3, 1)", "purpose": "Pet 姿态变化。" },
+      { "name": "speech-open", "value": "opacity 180ms ease, transform 360ms cubic-bezier(.16, 1, .3, 1)", "purpose": "从角色头顶展开气泡。" },
+      { "name": "affection", "value": "1.45s cubic-bezier(.16, 1, .3, 1) infinite", "purpose": "接近或 hover 时三颗爱心，延迟 0、.25s、.52s。" },
+      { "name": "flee", "value": "340ms ease-in-out infinite alternate", "purpose": "逃离时小步摆动。" },
+      { "name": "thinking", "value": "800ms ease-in-out infinite alternate", "purpose": "状态标签旁短条呼吸。" },
+      { "name": "level", "value": "1.5s cubic-bezier(.16, 1, .3, 1)", "purpose": "过关消息；减少动态效果时 .3s。" }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Speech Bubble",
+      "kind": "custom",
+      "refersTo": "speech",
+      "description": "按需出现在宠物头顶的奶白对话面。",
+      "html": "<section class=\"ds-speech\"><span class=\"ds-status\">我在听</span><p>悄悄说吧，我会小声回答。</p></section>",
+      "css": ".ds-speech{position:relative;width:308px;min-height:110px;padding:18px 18px 14px;border-radius:22px;background:var(--paper,#fbfcff);color:var(--ink,#17234b);box-shadow:0 14px 34px rgba(22,39,91,.22),0 3px 8px rgba(22,39,91,.12);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC',sans-serif}.ds-speech::after{content:'';position:absolute;left:50%;bottom:-12px;width:24px;height:24px;background:var(--paper,#fbfcff);transform:translateX(-50%) rotate(45deg);border-radius:0 0 7px 0}.ds-status{display:block;margin-bottom:5px;color:var(--blue,#4569df);font-size:12px;font-weight:700}.ds-speech p{margin:0;font-size:15px;line-height:1.48;letter-spacing:-.01em}"
+    },
+    {
+      "name": "Chat Input",
+      "kind": "input",
+      "refersTo": "chat-input",
+      "description": "浅蓝输入底色与聚焦内描边。",
+      "html": "<input class=\"ds-input\" aria-label=\"和桌面宠物聊天\" placeholder=\"和它说句话…\" maxlength=\"500\" />",
+      "css": ".ds-input{height:42px;padding:0 14px;border:0;border-radius:13px;outline:none;color:var(--ink,#17234b);background:#edf1ff;box-shadow:inset 0 0 0 1px transparent;transition:box-shadow 160ms ease,background 160ms ease;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC',sans-serif}.ds-input::placeholder{color:#7683a8}.ds-input:focus{background:#f2f5ff;box-shadow:inset 0 0 0 2px var(--blue,#4569df)}"
+    },
+    {
+      "name": "Send Button",
+      "kind": "button",
+      "refersTo": "send-button",
+      "description": "纸飞机动作，hover 加深，disabled 降低不透明度。",
+      "html": "<button class=\"ds-send\" aria-label=\"发送消息\"><svg viewBox=\"0 0 20 20\" aria-hidden=\"true\"><path d=\"m4 10 11-6-3.1 12-2.6-4.2L4 10Z\"/><path d=\"m9.3 11.8 2.4-2.3\"/></svg></button>",
+      "css": ".ds-send{display:grid;place-items:center;width:42px;height:42px;padding:0;border:0;border-radius:13px;color:white;background:var(--blue,#4569df);box-shadow:0 7px 14px rgba(45,74,180,.24);cursor:pointer}.ds-send:hover{background:var(--blue-dark,#2949b6)}.ds-send:focus-visible{outline:3px solid rgba(69,105,223,.32);outline-offset:2px}.ds-send:disabled{cursor:wait;opacity:.6}.ds-send svg{width:20px;height:20px;fill:currentColor;stroke:currentColor;stroke-width:1.2;stroke-linecap:round}"
+    },
+    {
+      "name": "Dismiss Button",
+      "kind": "button",
+      "refersTo": "dismiss-button",
+      "description": "右上角轻量关闭动作；键盘焦点沿用浏览器默认。",
+      "html": "<button class=\"ds-dismiss\" aria-label=\"关闭聊天\">Esc</button>",
+      "css": ".ds-dismiss{border:0;padding:5px 7px;border-radius:7px;color:var(--muted,#67749a);background:transparent;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC',sans-serif;font-size:11px;cursor:pointer}.ds-dismiss:hover{color:var(--ink,#17234b);background:#edf1ff}"
+    },
+    {
+      "name": "Game Exit",
+      "kind": "button",
+      "refersTo": "game-exit",
+      "description": "游戏计分条中的文字退出动作。",
+      "html": "<button class=\"ds-exit\">回去工作</button>",
+      "css": ".ds-exit{height:34px;padding:0 13px;border:0;border-radius:10px;color:#f6f8ff;background:#4265db;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','PingFang SC',sans-serif;font-size:12px;font-weight:650;cursor:pointer}.ds-exit:hover{background:#5878e9}.ds-exit:focus-visible{outline:3px solid rgba(141,164,255,.6);outline-offset:2px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "透明桌面活物",
+    "overview": "角色先于界面：蓝色双角单眼宠物直接站在用户桌面上，没有卡片外壳。奶白气泡只在被呼唤时展开；游戏用墨蓝夜幕暂时覆盖桌面。温柔、轻巧、能及时让路，是这套视觉语言的核心。",
+    "keyCharacteristics": ["蓝色角色是持续可见的品牌主体。", "常态透明；只有聊天与游戏提供有边界的交互面。", "系统字体、短句和克制的状态提示。", "亲昵通过姿态、眨眼和小爱心表达。"],
+    "rules": [],
+    "dos": ["Do 保留透明桌面与原角色轮廓，让交互面按需出现。", "Do 用系统字体、短句和清晰焦点反馈完成轻量交互。", "Do 将蓝色用于角色和动作，将奶黄保留给游戏食物与分数。"],
+    "donts": ["Don't 把宠物包进常驻卡片、工具栏或应用窗口外壳。", "Don't 将 SVG 角色内部渐变替换成通用按钮配色。", "Don't 添加未实现的导航、卡片库、手机断点或状态能力。"]
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "name": "blue-one-eye-pet",
+  "version": "0.1.0",
+  "description": "A shy one-eyed desktop pet that dodges, cuddles, chats, and plays Pac-Man.",
+  "type": "module",
+  "main": "src/main.js",
+  "bin": {
+    "bluepet": "bin/bluepet.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "assets",
+    "scripts",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "test": "node --test",
+    "icon": "node scripts/build-icon.mjs",
+    "pack": "electron-builder --dir",
+    "dist:mac": "electron-builder --mac dmg zip"
+  },
+  "keywords": [
+    "desktop-pet",
+    "electron",
+    "claude-code",
+    "macos"
+  ],
+  "author": "Blue One-Eye Pet contributors",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "sharp": "^0.35.4"
+  },
+  "peerDependencies": {
+    "electron": "^44.0.0"
+  },
+  "build": {
+    "appId": "com.blueoneeye.pet",
+    "productName": "Blue One-Eye Pet",
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.entertainment",
+      "icon": "assets/icon.png",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "extendInfo": {
+        "LSUIElement": true
+      }
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ]
+  }
+}

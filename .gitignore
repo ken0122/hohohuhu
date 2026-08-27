@@ -1,0 +1,10 @@
+node_modules/
+dist/
+work/
+outputs/
+.DS_Store
+*.tgz
+*.log
+.env
+.env.*
+!.env.example

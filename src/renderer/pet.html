@@ -1,0 +1,44 @@
+<!doctype html>
+<!--
+THESIS: 桌面上真正有生命、且先让路的小宠物；拒绝固定悬浮按钮和常驻控制面板。
+OWN-WORLD: 品牌蓝角色、墨蓝文字、奶白对话气泡；角色本体无框，交互面才有清晰边界。
+STORY: 它在工作时躲开，在陪伴时亲近，在用户呼唤时抬头说一句短话。
+FIRST VIEWPORT: 透明窗口底部只有约 88px 的宠物；聊天时气泡从头顶展开，输入是唯一主操作。
+FORM: 桌面活物而非应用窗口；固定 staging，无随机方向 seed。
+-->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Blue One-Eye Pet</title>
+    <link rel="stylesheet" href="pet.css" />
+  </head>
+  <body data-mode="dodge">
+    <main class="desktop-pet" aria-label="蓝色单眼桌面宠物">
+      <section class="speech" aria-hidden="true">
+        <div class="speech__response" aria-live="polite">
+          <span class="speech__status">我在听</span>
+          <p id="reply">悄悄说吧，我会小声回答。</p>
+        </div>
+        <form id="chat-form" class="speech__form">
+          <label class="sr-only" for="message">和桌面宠物聊天</label>
+          <input id="message" name="message" maxlength="500" autocomplete="off" placeholder="和它说句话…" />
+          <button type="submit" aria-label="发送消息">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 11-6-3.1 12-2.6-4.2L4 10Z"/><path d="m9.3 11.8 2.4-2.3"/></svg>
+          </button>
+        </form>
+        <button id="dismiss" class="speech__dismiss" type="button" aria-label="关闭聊天">Esc</button>
+      </section>
+
+      <div class="affection" aria-hidden="true">
+        <span>♥</span><span>♥</span><span>♥</span>
+      </div>
+      <div class="pet" id="pet">
+        <img src="../../assets/blue-one-eye-mascot.svg" alt="蓝色单眼桌面宠物" draggable="false" />
+        <span class="ground" aria-hidden="true"></span>
+      </div>
+    </main>
+    <script src="pet.js"></script>
+  </body>
+</html>

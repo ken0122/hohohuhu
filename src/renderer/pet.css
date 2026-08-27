@@ -1,0 +1,140 @@
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+  --ink: #17234b;
+  --muted: #67749a;
+  --blue: #4569df;
+  --blue-dark: #2949b6;
+  --paper: #fbfcff;
+}
+
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+button, input { font: inherit; }
+button { -webkit-app-region: no-drag; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; clip: rect(0, 0, 0, 0); overflow: hidden; }
+
+.desktop-pet { position: relative; width: 100%; height: 100%; user-select: none; }
+.pet {
+  position: absolute;
+  bottom: 7px;
+  left: 50%;
+  width: 96px;
+  height: 96px;
+  transform: translateX(-50%);
+  transform-origin: 50% 88%;
+  transition: transform 320ms cubic-bezier(.16, 1, .3, 1), filter 320ms ease;
+}
+.pet img { position: relative; z-index: 2; width: 100%; height: 100%; display: block; pointer-events: none; }
+.ground {
+  position: absolute;
+  z-index: 1;
+  left: 24px;
+  bottom: 8px;
+  width: 48px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(25, 43, 98, .18);
+  filter: blur(3px);
+  transition: transform 240ms ease, opacity 240ms ease;
+}
+
+body[data-facing="left"] .pet { scale: -1 1; }
+body.is-fleeing .pet { animation: scurry 340ms ease-in-out infinite alternate; filter: saturate(1.12); }
+body.is-fleeing .ground { transform: scaleX(.78); opacity: .65; }
+
+body[data-mode="pet"] .pet { cursor: default; }
+body[data-mode="pet"] .pet:hover,
+body[data-mode="pet"].is-affectionate .pet { transform: translateX(-50%) translateY(-5px) rotate(-4deg) scale(1.06, .97); }
+body[data-mode="pet"] .pet:hover .ground,
+body[data-mode="pet"].is-affectionate .ground { transform: translateY(5px) scaleX(.82); opacity: .65; }
+.affection { position: absolute; z-index: 4; left: 50%; bottom: 82px; width: 76px; transform: translateX(-50%); pointer-events: none; }
+.affection span { position: absolute; color: #6e89f1; opacity: 0; font-size: 13px; text-shadow: 0 2px 7px rgba(37, 64, 155, .24); }
+.affection span:nth-child(1) { left: 10px; }
+.affection span:nth-child(2) { left: 34px; top: -8px; }
+.affection span:nth-child(3) { right: 8px; top: 5px; }
+body[data-mode="pet"] .pet:hover ~ * { opacity: 1; }
+body[data-mode="pet"] .affection:has(+ .pet:hover) span { animation: heart 1.45s cubic-bezier(.16, 1, .3, 1) infinite; }
+body[data-mode="pet"].is-affectionate .affection span { animation: heart 1.45s cubic-bezier(.16, 1, .3, 1) infinite; }
+body[data-mode="pet"] .affection:has(+ .pet:hover) span:nth-child(2) { animation-delay: .25s; }
+body[data-mode="pet"] .affection:has(+ .pet:hover) span:nth-child(3) { animation-delay: .52s; }
+body[data-mode="pet"].is-affectionate .affection span:nth-child(2) { animation-delay: .25s; }
+body[data-mode="pet"].is-affectionate .affection span:nth-child(3) { animation-delay: .52s; }
+
+.speech {
+  position: absolute;
+  z-index: 10;
+  left: 12px;
+  top: 10px;
+  width: calc(100% - 24px);
+  min-height: 142px;
+  padding: 18px 18px 14px;
+  border-radius: 22px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 14px 34px rgba(22, 39, 91, .22), 0 3px 8px rgba(22, 39, 91, .12);
+  opacity: 0;
+  transform: translateY(14px) scale(.94);
+  transform-origin: 50% 100%;
+  pointer-events: none;
+  transition: opacity 180ms ease, transform 360ms cubic-bezier(.16, 1, .3, 1);
+}
+.speech::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -12px;
+  width: 24px;
+  height: 24px;
+  background: var(--paper);
+  transform: translateX(-50%) rotate(45deg);
+  border-radius: 0 0 7px 0;
+}
+body.chat-open .speech { opacity: 1; transform: none; pointer-events: auto; }
+.speech__response { min-height: 58px; padding-right: 32px; }
+.speech__status { display: block; margin-bottom: 5px; color: var(--blue); font-size: 12px; font-weight: 700; }
+.speech__response p { margin: 0; font-size: 15px; line-height: 1.48; letter-spacing: -.01em; }
+.speech__form { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.speech__form input {
+  min-width: 0;
+  flex: 1;
+  height: 42px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 13px;
+  outline: none;
+  color: var(--ink);
+  background: #edf1ff;
+  box-shadow: inset 0 0 0 1px transparent;
+  transition: box-shadow 160ms ease, background 160ms ease;
+}
+.speech__form input::placeholder { color: #7683a8; }
+.speech__form input:focus { background: #f2f5ff; box-shadow: inset 0 0 0 2px var(--blue); }
+.speech__form button {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 13px;
+  color: white;
+  background: var(--blue);
+  box-shadow: 0 7px 14px rgba(45, 74, 180, .24);
+  cursor: pointer;
+}
+.speech__form button:hover { background: var(--blue-dark); }
+.speech__form button:focus-visible { outline: 3px solid rgba(69, 105, 223, .32); outline-offset: 2px; }
+.speech__form button:disabled { cursor: wait; opacity: .6; }
+.speech__form svg { width: 20px; height: 20px; fill: currentColor; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; }
+.speech__dismiss { position: absolute; top: 14px; right: 14px; border: 0; padding: 5px 7px; border-radius: 7px; color: var(--muted); background: transparent; font-size: 11px; cursor: pointer; }
+.speech__dismiss:hover { color: var(--ink); background: #edf1ff; }
+body.is-thinking .speech__status::after { content: ""; display: inline-block; width: 14px; height: 4px; margin-left: 6px; border-radius: 4px; background: var(--blue); animation: thinking 800ms ease-in-out infinite alternate; vertical-align: 2px; }
+
+@keyframes scurry { from { transform: translateX(-50%) rotate(-5deg) translateY(0); } to { transform: translateX(-50%) rotate(5deg) translateY(-3px); } }
+@keyframes heart { 0% { opacity: 0; transform: translateY(8px) scale(.65) rotate(-8deg); } 24% { opacity: 1; } 100% { opacity: 0; transform: translateY(-25px) scale(1.1) rotate(8deg); } }
+@keyframes thinking { from { transform: scaleX(.4); opacity: .45; } to { transform: scaleX(1); opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

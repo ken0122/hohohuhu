@@ -1,0 +1,37 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">蓝色单眼桌面宠物</title>
+  <desc id="desc">无阴影的蓝色双角单眼角色轻轻侧身、弹跳、眨眼并看向用户</desc>
+  <defs>
+    <radialGradient id="body" cx="0" cy="0" r="1" gradientTransform="translate(24 17) rotate(55) scale(48 43)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7594FF"/>
+      <stop offset=".42" stop-color="#5377ED"/>
+      <stop offset="1" stop-color="#3154CD"/>
+    </radialGradient>
+    <radialGradient id="eye" cx="0" cy="0" r="1" gradientTransform="translate(26 25) rotate(55) scale(20 18)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset=".72" stop-color="#F8FAFF"/>
+      <stop offset="1" stop-color="#DCE3F4"/>
+    </radialGradient>
+    <radialGradient id="pupil" cx="0" cy="0" r="1" gradientTransform="translate(31 29) rotate(60) scale(10)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#414553"/>
+      <stop offset="1" stop-color="#20232D"/>
+    </radialGradient>
+    <clipPath id="eyeClip"><circle cx="31" cy="29.5" r="9.5"/></clipPath>
+  </defs>
+  <g class="mascot">
+    <path class="body" d="M18.5 21C16.2 15 17.1 7.5 19.4 6.8c2.4-.7 5.3 4.3 7.6 7.7 3.3-1.2 6.7-1.2 10 0 2.3-3.4 5.2-8.4 7.6-7.7 2.3.7 3.2 8.2.9 14.2 3.1 4.5 4 10.3 3.3 16.1-.5 4.1.7 8.2 4 12.4 2.2 2.9.8 6.9-2.8 7.2-3.1.2-5.4-2.4-8.5-2.2-3.3.2-5.5 4.2-9.3 4.2s-6-4-9.3-4.2c-3.1-.2-5.4 2.4-8.5 2.2-3.6-.3-5-4.3-2.8-7.2 3.3-4.2 4.5-8.3 4-12.4-.7-5.8.2-11.6 3.3-16.1Z" fill="url(#body)"/>
+    <path d="M20 8.4c.6 4.2 2.2 6.8 4.8 8.4M44.3 8.7c-.8 3.9-2.4 6.5-5 8" stroke="#A8B9FF" stroke-width="1.3" stroke-linecap="round" opacity=".45"/>
+    <path d="M23.6 19.2c3.7-3.9 10.7-5.3 16.8-1.2" stroke="#A9BBFF" stroke-width="1.5" stroke-linecap="round" opacity=".42"/>
+    <g class="eye">
+      <circle cx="31" cy="29.5" r="9.5" fill="url(#eye)"/>
+      <g clip-path="url(#eyeClip)">
+        <g class="pupil"><circle cx="35" cy="29.8" r="5.2" fill="url(#pupil)"/><circle cx="33.2" cy="27.9" r="1.35" fill="white" opacity=".9"/></g>
+        <path class="lid" d="M19 10h24v20c-5.5 2.3-17.9 2.3-24 0V10Z" fill="#4A6FE7"/>
+      </g>
+      <circle cx="31" cy="29.5" r="9.5" stroke="#2948B5" stroke-opacity=".18"/>
+    </g>
+  </g>
+  <style>
+    .mascot{transform-box:fill-box;transform-origin:50% 100%;animation:greet 2.8s cubic-bezier(.45,0,.25,1) infinite}.pupil{transform-box:fill-box;transform-origin:center;animation:look 3.8s ease-in-out 1.2s infinite}.lid{transform-box:fill-box;transform-origin:50% 0;transform:translateY(-20px);animation:blink 4.2s ease-in-out 1.8s infinite}@keyframes greet{0%,18%,100%{transform:translateY(0) rotate(0) scale(1)}32%{transform:translateY(-1.5px) rotate(-3deg) scale(1.01,.99)}46%{transform:translateY(0) rotate(2deg) scale(.995,1.005)}58%,82%{transform:translateY(-.4px) rotate(0) scale(1.004,.996)}}@keyframes look{0%,18%,100%{transform:translate(0)}34%,54%{transform:translate(-1.6px,.3px)}70%,86%{transform:translate(1.2px,-.2px)}}@keyframes blink{0%,44%,50%,100%{transform:translateY(-20px)}46%,48%{transform:translateY(0)}}@media(prefers-reduced-motion:reduce){.mascot,.pupil,.lid{animation:none}.lid{transform:translateY(-20px)}}
+  </style>
+</svg>
