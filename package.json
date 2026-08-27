@@ -1,6 +1,6 @@
 {
   "name": "blue-one-eye-pet",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "description": "A shy one-eyed desktop pet that dodges, cuddles, chats, and plays Pac-Man.",
   "type": "module",
   "main": "src/main.js",
@@ -18,7 +18,9 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "test": "node --test",
+    "test": "node --test test/*.test.js",
+    "test:desktop": "electron scripts/desktop-test.mjs",
+    "icon:tray": "node scripts/build-tray.mjs",
     "icon": "node scripts/build-icon.mjs",
     "pack": "electron-builder --dir",
     "dist:mac": "electron-builder --mac dmg zip"

@@ -13,10 +13,11 @@ FORM: 桌面活物而非应用窗口；固定 staging，无随机方向 seed。
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Blue One-Eye Pet</title>
     <link rel="stylesheet" href="pet.css" />
+    <link rel="stylesheet" href="mascot.css" />
   </head>
   <body data-mode="dodge">
     <main class="desktop-pet" aria-label="蓝色单眼桌面宠物">
-      <section class="speech" aria-hidden="true">
+      <section class="speech" aria-hidden="true" inert>
         <div class="speech__response" aria-live="polite">
           <span class="speech__status">我在听</span>
           <p id="reply">悄悄说吧，我会小声回答。</p>
@@ -34,11 +35,12 @@ FORM: 桌面活物而非应用窗口；固定 staging，无随机方向 seed。
       <div class="affection" aria-hidden="true">
         <span>♥</span><span>♥</span><span>♥</span>
       </div>
-      <div class="pet" id="pet">
-        <img src="../../assets/blue-one-eye-mascot.svg" alt="蓝色单眼桌面宠物" draggable="false" />
+      <button class="pet" id="pet" type="button" aria-label="摸摸宠物">
+        <span class="character" id="character"></span>
         <span class="ground" aria-hidden="true"></span>
-      </div>
+      </button>
+      <span class="pet-hint" id="pet-hint" aria-live="polite"></span>
     </main>
-    <script src="pet.js"></script>
+    <script type="module" src="pet.js"></script>
   </body>
 </html>

@@ -1,11 +1,36 @@
 export const MODES = Object.freeze({
   DODGE: "dodge",
   PET: "pet",
+  CONTROL: "control",
   PACMAN: "pacman",
 });
 
 export function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
+  return Math.min(Math.max(min, max), Math.max(min, value));
+}
+
+// Keep fractional coordinates in the simulation; round only native window bounds.
+export function fitPet(position, bounds, size = 144) {
+  return {
+    x: clamp(position.x, bounds.x, bounds.x + bounds.width - size),
+    y: clamp(position.y, bounds.y, bounds.y + bounds.height - size),
+  };
+}
+
+export function gazeDirection(x, y) {
+  const length = Math.hypot(x, y);
+  return length ? { x: x / length, y: y / length } : { x: 0, y: 0 };
+}
+
+export function controlVelocity(keys, speed = 300) {
+  const x = Number(keys.has("ArrowRight")) - Number(keys.has("ArrowLeft"));
+  const y = Number(keys.has("ArrowDown")) - Number(keys.has("ArrowUp"));
+  const direction = gazeDirection(x, y);
+  return { x: direction.x * speed, y: direction.y * speed };
+}
+
+export function petShouldShow({ mode, manualHidden }) {
+  return !manualHidden && mode !== MODES.PACMAN;
 }
 
 export function limitUnicode(text, maxLength = 50) {

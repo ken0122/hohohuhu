@@ -13,6 +13,7 @@ FORM: 屏幕遮罩小游戏，方向键是唯一持续操作；固定 staging，
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Blue One-Eye Pac-Man</title>
     <link rel="stylesheet" href="game.css" />
+    <link rel="stylesheet" href="mascot.css" />
   </head>
   <body>
     <canvas id="game" aria-label="用方向键操控蓝色单眼宠物吃豆豆"></canvas>
@@ -22,7 +23,7 @@ FORM: 屏幕遮罩小游戏，方向键是唯一持续操作；固定 staging，
       <button id="exit" type="button">回去工作</button>
     </header>
     <div class="level-message" id="level-message" aria-live="polite"></div>
-    <img id="sprite" src="../../assets/blue-one-eye-mascot.svg" alt="" hidden />
-    <script src="game.js"></script>
+    <div id="game-pet" class="game-pet"></div>
+    <script type="module" src="game.js"></script>
   </body>
 </html>

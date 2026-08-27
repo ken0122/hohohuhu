@@ -1,0 +1,29 @@
+.mascot-svg { width: 100%; height: 100%; overflow: visible; --gaze-x: 0px; --gaze-y: 0px; }
+/* SVG inline styles are blocked by CSP. Keep the open-eye baseline external. */
+.mascot-svg .lid { transform: translateY(-20px); animation: none; }
+.mascot-svg .mascot { transform-box: fill-box; transform-origin: 50% 100%; }
+.mascot-svg .pupil { transform-box: fill-box; transform-origin: center; transform: translate(-4px,-.3px); transition: transform 220ms ease-out; }
+.mascot-svg[data-looking="true"] .pupil {
+  animation: none;
+  /* Original eye center is (31,29.5), original pupil center is (35,29.8). */
+  transform: translate(calc(var(--gaze-x) - 4px), calc(var(--gaze-y) - .3px));
+  transition: transform 100ms ease-out;
+}
+body[data-reaction="idle-look"] .mascot-svg .pupil { transition-duration: 450ms; }
+/* Walking/running affects only the single original body path, never layers. */
+.mascot-svg[data-gait="walk"] .mascot,
+.mascot-svg[data-gait="run"] .mascot { animation: none; }
+body[data-reaction="nuzzle"] .mascot-svg .mascot { animation: nuzzle 1.1s ease-in-out; }
+body[data-reaction="headpat"] .mascot-svg .mascot { animation: headpat 500ms ease-in-out 2; }
+body[data-reaction="hop"] .mascot-svg .mascot { animation: happy-hop 700ms cubic-bezier(.16,1,.3,1); }
+body[data-reaction="shy"] .mascot-svg .mascot { animation: shy 800ms ease-in-out; }
+body[data-reaction="idle-stretch"] .mascot-svg .mascot { animation: idle-stretch 1.5s ease-in-out; }
+@keyframes nuzzle { 0%,100% { transform: rotate(0); } 35% { transform: rotate(-4deg) translate(-1px,-.5px); } 70% { transform: rotate(3deg) translate(1px,-.5px); } }
+@keyframes headpat { 0%,100% { transform: scale(1); } 50% { transform: scale(1.025,.97) translateY(.5px); } }
+@keyframes happy-hop { 0%,100% { transform: translateY(0); } 20% { transform: scale(1.1,.85); } 50% { transform: translateY(-9px) scale(.95,1.05); } 80% { transform: translateY(0) scale(1.06,.94); } }
+@keyframes shy { 0%,100% { transform: rotate(0); } 35% { transform: rotate(-3deg) scale(.985); } 65% { transform: rotate(2deg) scale(.99); } }
+@keyframes idle-stretch { 0%,100% { transform: scale(1) rotate(0); } 40% { transform: scale(.985,1.025) rotate(-1.5deg); } 70% { transform: scale(1.01,.995) rotate(1deg); } }
+body.is-paused .mascot-svg *, body.is-paused .affection span { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) {
+  .mascot-svg *, body[data-reaction] .mascot-svg .mascot, body[data-reaction] .mascot-svg .lid { animation: none !important; transition: none !important; }
+}

@@ -1,6 +1,8 @@
+import { createMascot } from "./mascot.js";
 const canvas = document.querySelector("#game");
 const context = canvas.getContext("2d");
-const sprite = document.querySelector("#sprite");
+const spriteHost = document.querySelector("#game-pet");
+const sprite = await createMascot(spriteHost, { eyelids: false });
 const scoreElement = document.querySelector("#score");
 const levelMessage = document.querySelector("#level-message");
 const exitButton = document.querySelector("#exit");
@@ -92,24 +94,21 @@ function draw(time) {
     context.fill();
   }
   context.shadowBlur = 0;
-  context.save();
-  context.translate(pet.x, pet.y);
-  context.scale(pet.facing, 1);
   const scale = 1 + pulse * .12;
-  context.scale(scale, scale);
-  context.drawImage(sprite, -pet.size / 2, -pet.size / 2, pet.size, pet.size);
-  context.restore();
+  spriteHost.style.transform = `translate(${pet.x - pet.size / 2}px, ${pet.y - pet.size / 2}px) scale(${scale})`;
+  sprite.motion({ x: pet.vx, y: pet.vy, gait: pet.vx || pet.vy ? "run" : "idle" });
 }
 
 function frame(time) {
   const dt = Math.min(.05, (time - previousTime) / 1000);
   previousTime = time;
-  update(dt);
+  if (!document.hidden) update(dt);
   draw(time);
   requestAnimationFrame(frame);
 }
 
 window.addEventListener("resize", resize);
+document.addEventListener("visibilitychange", () => document.body.classList.toggle("is-paused", document.hidden));
 window.addEventListener("keydown", handleKey);
 exitButton.addEventListener("click", () => window.bluepet.exitGame());
 resize();
