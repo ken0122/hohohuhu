@@ -8,7 +8,7 @@ import { app, globalShortcut, nativeImage, screen, powerMonitor, systemPreferenc
 await mkdir(path.resolve("work"), { recursive: true });
 app.setPath("userData", await mkdtemp(path.resolve("work/desktop-test-")));
 const runtime = await import("../src/main.js");
-const { getRuntime, ready, setMode, toggleHidden, showChat, restorePetFrame, recoverWindows, shutdown } = runtime;
+const { getRuntime, ready, setMode, cycleMode, toggleHidden, showChat, restorePetFrame, recoverWindows, shutdown } = runtime;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(fn, timeout = 4000) {
   const deadline = Date.now() + timeout;
@@ -73,8 +73,35 @@ try {
       restorePetFrame();
     } finally {screen.getCursorScreenPoint=realCursor;systemPreferences.getAnimationSettings=realAnimations;}
   });
+  await check("Motion cadence: native Dodge and Pet return window updates",async()=>{
+    setMode("pet");await until(()=>!getRuntime().modeTransition,7000);
+    const win=getRuntime().petWindow,origin=getRuntime().position,area=screen.getDisplayMatching(win.getBounds()).workArea;
+    const target={x:area.x+area.width/2-66,y:area.y+area.height/2-66};
+    for(const request of [{phase:"start",point:origin},{phase:"move",point:target},{phase:"end"}]) {
+      await evaluate("window.bluepet.dragPet("+JSON.stringify(request)+")");await delay(30);
+    }
+    const realCursor=screen.getCursorScreenPoint,realPosition=win.setPosition,realAnimations=systemPreferences.getAnimationSettings;
+    screen.getCursorScreenPoint=()=>({x:getRuntime().position.x+140,y:getRuntime().position.y+66});
+    systemPreferences.getAnimationSettings=()=>({...realAnimations.call(systemPreferences),prefersReducedMotion:false});
+    let samples=[];
+    win.setPosition=function(...args) {samples.push(performance.now());return realPosition.apply(this,args);};
+    const report=label=>{
+      const gaps=samples.slice(1).map((time,i)=>time-samples[i]).sort((a,b)=>a-b);
+      const hz=(samples.length-1)*1000/(samples.at(-1)-samples[0]);
+      console.log("Native cadence:",JSON.stringify({label,updates:samples.length,hz:Math.round(hz),p95ms:Math.round(gaps[Math.floor(gaps.length*.95)])}));
+      if(!process.env.BLUEPET_PROFILE_BASELINE)assert.ok(hz>45,label+" should exceed the former 31Hz clock");
+    };
+    try {
+      setMode("dodge");await delay(1400);samples=[];await delay(450);report("dodge");
+      setMode("pet");samples=[];await delay(450);report("pet-return");
+      await until(()=>!getRuntime().modeTransition,7000);await visiblePixels();
+    } finally {screen.getCursorScreenPoint=realCursor;win.setPosition=realPosition;systemPreferences.getAnimationSettings=realAnimations;}
+  });
   await check("eye stays open by default under CSP, with only brief natural blinks",async()=>{
     const eyeY=()=>evaluate("new DOMMatrix(getComputedStyle(document.querySelector('.lid')).transform).m42");
+    // Previous checks may finish during a legitimate blink; begin the sampling
+    // window once it finishes, retaining the duration/open-ratio assertions.
+    await until(async()=>await eyeY()===-20,500);
     assert.equal(await eyeY(),-20);
     let samples=0,closed=0,closedSince=0,longest=0,captured=false;
     const start=performance.now();
@@ -108,10 +135,33 @@ try {
     assert.ok(getRuntime().tray.getBounds().width>0);
     assert.deepEqual(getRuntime().trayMenu.items.filter(item=>item.type==="radio").map(item=>item.id),["dodge","pet","pacman"]);
   });
-  await check("both global shortcuts registered; menu cannot double-register hide", async () => {
+  await check("three global shortcuts registered; menu cannot double-register accelerators", async () => {
     assert.ok(globalShortcut.isRegistered("Control+Alt+B"));
     assert.ok(globalShortcut.isRegistered("Control+Alt+Space"));
+    assert.ok(globalShortcut.isRegistered("Control+Alt+Command+M"));
     assert.equal(getRuntime().trayMenu.getMenuItemById("hide").registerAccelerator,false);
+    assert.equal(getRuntime().trayMenu.getMenuItemById("cycle-mode").registerAccelerator,false);
+  });
+  await check("Mode shortcut: cycle order, repeat guard, chat exit and hidden-pet protection",async()=>{
+    setMode("dodge");cycleMode();assert.equal(getRuntime().state.mode,"pet");
+    cycleMode();assert.equal(getRuntime().state.mode,"pet","holding the shortcut cannot race through modes");
+    await delay(420);showChat();cycleMode();assert.equal(getRuntime().state.mode,"pacman");
+    assert.equal(getRuntime().state.chatOpen,false);await until(()=>getRuntime().gameWindow?.isVisible());
+    await delay(420);cycleMode();assert.equal(getRuntime().state.mode,"dodge");
+    assert.equal(getRuntime().gameWindow,undefined);
+    toggleHidden();await delay(420);cycleMode();assert.equal(getRuntime().state.mode,"dodge");
+    assert.equal(getRuntime().petWindow.isVisible(),false);toggleHidden();
+  });
+  await check("Frame clock: idle avoids native position writes and hidden frames stop",async()=>{
+    setMode("pet");await until(()=>!getRuntime().modeTransition,7000);await delay(100);
+    const win=getRuntime().petWindow,real=win.setPosition;let writes=0;
+    win.setPosition=function(...args){writes++;return real.apply(this,args);};
+    try {
+      await delay(200);assert.equal(writes,0,"stationary Pet does not move its native window every frame");
+      setMode("dodge");await delay(100);toggleHidden();const hidden=getRuntime().position;
+      writes=0;await delay(700);assert.equal(writes,0);assert.deepEqual(getRuntime().position,hidden);
+      assert.equal(win.isVisible(),false);toggleHidden();await delay(100);assert.equal(win.isVisible(),true);
+    } finally {win.setPosition=real;}
   });
   for(const mode of ["dodge","pet"]) {
     await check(mode + ": visible geometry, real character pixels, chat roundtrip and boss-key restore",async()=>{
@@ -430,13 +480,13 @@ try {
     await js("import('./game.js').then(({game})=>{Object.assign(game.pet,{x:200,y:200,vx:0,vy:0});game.pellets=[{x:260,y:200,radius:5,glow:0},{x:340,y:200,radius:5,glow:0}];})");
     win.webContents.sendInputEvent({type:"keyDown",keyCode:"RIGHT"});
     await until(()=>js("document.querySelector('#round').textContent==='2'"));
-    assert.deepEqual(await js("import('./game.js').then(({game})=>[game.pet.speed,game.pet.vx,game.pet.vy])"),[308,308,0]);
-    assert.equal(await js("document.querySelector('#speed').textContent"),"1.10×");
+    assert.deepEqual(await js("import('./game.js').then(({game})=>[game.pet.speed,game.pet.vx,game.pet.vy])"),[364,364,0]);
+    assert.equal(await js("document.querySelector('#speed').textContent"),"1.30×");
     await js("import('./game.js').then(({game})=>{Object.assign(game.pet,{x:200,y:200,vx:0,vy:0});game.pellets=[{x:260,y:200,radius:5,glow:0},{x:340,y:200,radius:5,glow:0}];})");
     win.webContents.sendInputEvent({type:"keyDown",keyCode:"RIGHT"});
     await until(()=>js("document.querySelector('#round').textContent==='3'"));
-    assert.deepEqual(await js("import('./game.js').then(({game})=>[game.pet.speed,game.pet.vx].map(v=>Math.round(v*100)/100))"),[338.8,338.8]);
-    assert.equal(await js("document.querySelector('#speed').textContent"),"1.21×");
+    assert.deepEqual(await js("import('./game.js').then(({game})=>[game.pet.speed,game.pet.vx].map(v=>Math.round(v*100)/100))"),[473.2,473.2]);
+    assert.equal(await js("document.querySelector('#speed').textContent"),"1.69×");
     const hud=await js("document.querySelector('.hud').getBoundingClientRect().toJSON()");
     const hint=await js("document.querySelector('#level-message').getBoundingClientRect().toJSON()");
     assert.ok(hint.top>=hud.top&&hint.bottom<=hud.bottom,"round announcement stays within the HUD");

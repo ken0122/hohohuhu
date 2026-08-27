@@ -10,12 +10,12 @@ test("only clearing the entire round increases speed, preserving current directi
   assert.equal(game.pet.speed,280);
   game.pet.x=800;
   assert.equal(updateGame(game,0,1200,800),true);
-  assert.equal(game.level,2); assert.equal(game.pet.speed,308); assert.equal(game.pet.vx,308);
+  assert.equal(game.level,2); assert.equal(game.pet.speed,364); assert.equal(game.pet.vx,364);
   assert.equal(game.pet.vy,0); assert.equal(game.pellets.length,24);
   assert.equal(game.score,2);
 });
 test("each new round is faster, stationary clears do not launch the pet, new games reset", () => {
-  for (let level=1;level<100;level++) assert.ok(Math.abs(speedForLevel(level+1)/speedForLevel(level)-1.1)<1e-12);
+  for (let level=1;level<100;level++) assert.ok(Math.abs(speedForLevel(level+1)/speedForLevel(level)-1.3)<1e-12);
   const game=createGame(1200,800);
   game.pellets=[{x:game.pet.x,y:game.pet.y,radius:9}];
   updateGame(game,0,1200,800);

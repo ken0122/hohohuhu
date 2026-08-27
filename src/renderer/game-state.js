@@ -1,6 +1,6 @@
 export const GAME_PET_SIZE = 64;
 export const GAME_HUD_HEIGHT = 96;
-export const speedForLevel = level => 280 * 1.1 ** (Math.max(1, Math.floor(level)) - 1);
+export const speedForLevel = level => 280 * 1.3 ** (Math.max(1, Math.floor(level)) - 1);
 const topOfPlay = GAME_HUD_HEIGHT + GAME_PET_SIZE / 2 + 12;
 
 export function makePellets(level, width, height, random = Math.random) {

@@ -125,6 +125,14 @@ window.bluepet.onPetMotion(motion => {
 window.bluepet.onPetProximity(proximity);
 window.bluepet.ready();
 
+// The visible renderer supplies the display-synchronised clock, instead of
+// moving the native window on an unrelated 32ms main-process interval.
+function desktopFrame() {
+  if(visible&&!chatOpen&&!document.hidden&&!drag.pressed)window.bluepet.frame();
+  requestAnimationFrame(desktopFrame);
+}
+requestAnimationFrame(desktopFrame);
+
 form.addEventListener("submit", async event => {
   event.preventDefault();
   const message = input.value.trim();

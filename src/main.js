@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, screen, systemPreferences, Tray } from "electron";
-import { clamp, controlVelocity, fitPet, MODES, petShouldShow, normalizeMode, PET_FRAME_SIZE, PET_SPRITE_SIZE, validDragPoint, dragPosition } from "./core.js";
+import { clamp, controlVelocity, fitPet, MODES, petShouldShow, normalizeMode, nextMode, PET_FRAME_SIZE, PET_SPRITE_SIZE, validDragPoint, dragPosition } from "./core.js";
 import { askClaude } from "./chat.js";
 import { createDodgeMotion } from "./dodge.js";
 import { arriveAt, launchVelocity } from "./mode-motion.js";
@@ -12,13 +12,16 @@ const PET_SIZE = PET_FRAME_SIZE;
 const CHAT_SIZE = { width: 368, height: 300 };
 const HIDE_SHORTCUT = process.env.BLUEPET_HIDE_SHORTCUT || "Control+Alt+B";
 const CHAT_SHORTCUT = process.env.BLUEPET_CHAT_SHORTCUT || "Control+Alt+Space";
+const MODE_SHORTCUT = process.env.BLUEPET_MODE_SHORTCUT || "Control+Alt+Command+M";
 const requestedMode = normalizeMode(process.argv.find(arg => arg.startsWith("--mode="))?.split("=")[1]);
 const initialMode = Object.values(MODES).includes(requestedMode) ? requestedMode : MODES.DODGE;
 const state = { mode: initialMode, manualHidden: false, chatOpen: false, controlActive: false };
 let petWindow, gameWindow, tray, trayMenu, loop;
 let petReady = false, quitting = false, menuOpen = false;
 let position = { x: 80, y: 160 }, velocity = { x: 48, y: 25 };
-let lastTick = performance.now(), lastRecovery = 0;
+let lastTick = performance.now(), lastProximity = 0,lastCycle=-Infinity;
+let reducedMotion=false;
+let nativePosition;
 let dragSession;
 const dodge = createDodgeMotion();
 let dodgeMotion;
@@ -40,6 +43,11 @@ function pinPet(display = cursorDisplay()) {
   petHome={...position};
 }
 function cancelModeTransition() { modeTransition=undefined;velocity={x:0,y:0}; }
+function movePetWindow() {
+  const x=Math.round(position.x),y=Math.round(position.y);
+  if(nativePosition?.x===x&&nativePosition?.y===y)return;
+  petWindow.setPosition(x,y,false);nativePosition={x,y};
+}
 function stopControl() {
   keys.clear(); state.controlActive = false;
   send("pet:motion", { x: 0, y: 0, gait: "idle" });
@@ -64,7 +72,7 @@ function handlePetDrag(event, request) {
     const display = screen.getDisplayNearestPoint({ x: Math.round(request.point.x), y: Math.round(request.point.y) });
     position = dragPosition(dragSession.origin, dragSession.start, request.point, display.workArea);
     petHome={...position};
-    petWindow.setPosition(Math.round(position.x), Math.round(position.y), false);
+    movePetWindow();
   }
 }
 function normalFrame() {
@@ -90,6 +98,7 @@ function syncPet({ focus = false } = {}) {
   const focusable = state.chatOpen || state.mode === MODES.PET;
   petWindow.setFocusable(focusable);
   petWindow.setBounds(petFrame(), false);
+  nativePosition=undefined;
   petWindow.setOpacity(1);
   petWindow.setIgnoreMouseEvents(state.mode === MODES.DODGE && !state.chatOpen, { forward: true });
   const visible = petShouldShow(state);
@@ -183,6 +192,12 @@ export function setMode(nextMode) {
   if (nextMode === MODES.PACMAN) createGameWindow();
   rebuildTrayMenu();
 }
+export function cycleMode() {
+  const now=performance.now();
+  // A held key must not open/close the game repeatedly or reveal a hidden pet.
+  if(state.manualHidden||now-lastCycle<400)return;
+  lastCycle=now;setMode(nextMode(state.mode));
+}
 export function recoverWindows({ focus = false } = {}) {
   if (quitting) return;
   cancelModeTransition();
@@ -200,16 +215,14 @@ export function recoverWindows({ focus = false } = {}) {
   }
 }
 function tick() {
-  const now = performance.now(), elapsed = (now-lastTick)/1000, dt = Math.min(.06,elapsed); lastTick = now;
+  const now = performance.now(), elapsed = (now-lastTick)/1000, dt = Math.min(.06,elapsed);
+  if(elapsed<.004)return; // Bound IPC bursts without imposing a 60Hz ceiling.
+  lastTick = now;
   if (!petReady || menuOpen || dragSession || state.manualHidden || state.mode === MODES.PACMAN) { dodge.reset(); return; }
-  if (now - lastRecovery > 1500) {
-    lastRecovery = now;
-    if (petShouldShow(state) && !petWindow.isVisible()) syncPet();
-  }
   if (state.chatOpen) { dodge.reset(); return; }
   const cursor = screen.getCursorScreenPoint();
   const bounds=currentDisplay().workArea;
-  const reduced=systemPreferences.getAnimationSettings().prefersReducedMotion;
+  const reduced=reducedMotion;
   if(reduced&&modeTransition)cancelModeTransition();
   let arrivedPosition;
   if(modeTransition?.target) {
@@ -217,17 +230,18 @@ function tick() {
     arrivedPosition=motion.position;velocity=motion.velocity;
     if(motion.done)modeTransition=undefined;
   } else if (state.mode === MODES.DODGE) {
-    dodgeMotion=dodge.step({petCenter:{x:position.x+PET_SIZE/2,y:position.y+PET_SIZE/2},cursor,dt:elapsed,bounds:currentDisplay().workArea,
+    dodgeMotion=dodge.step({petCenter:{x:position.x+PET_SIZE/2,y:position.y+PET_SIZE/2},cursor,dt:elapsed,bounds,
       reducedMotion:reduced});
     velocity=modeTransition?launchVelocity(velocity,dodgeMotion.velocity,dt):dodgeMotion.velocity;
     if(modeTransition) {modeTransition.remaining-=dt;if(modeTransition.remaining<=0)modeTransition=undefined;}
   } else { dodge.reset(); dodgeMotion=undefined; velocity = state.controlActive ? controlVelocity(keys) : { x: 0, y: 0 }; }
   position = arrivedPosition||fitPet({ x: position.x + velocity.x * dt, y: position.y + velocity.y * dt }, bounds, PET_SIZE);
   if(state.mode===MODES.PET&&!modeTransition)petHome={...position};
-  petWindow.setPosition(Math.round(position.x), Math.round(position.y), false);
+  movePetWindow();
   const moving = Math.hypot(velocity.x, velocity.y) > 0;
   send("pet:motion", { ...velocity, gait: moving ? (state.mode === MODES.PET ? "run" : dodgeMotion.gait) : "idle" });
-  if (state.mode === MODES.PET && !moving) {
+  if (state.mode === MODES.PET && !moving && now-lastProximity>=50) {
+    lastProximity=now;
     const x = cursor.x - position.x - PET_SIZE / 2;
     const y = cursor.y - position.y - PET_SIZE + 7 + PET_SPRITE_SIZE / 2;
     send("pet:proximity", { near: Math.hypot(x, y) < 100, x, y });
@@ -245,6 +259,7 @@ function controlInput(event, input) {
 }
 function createPetWindow() {
   petReady = false;
+  nativePosition=undefined;
   const win = new BrowserWindow({ ...normalFrame(), frame: false, transparent: true, resizable: false,
     alwaysOnTop: true, skipTaskbar: true, show: false, focusable: false, acceptFirstMouse: true, hasShadow: false, webPreferences });
   petWindow = win; raiseWindow(win);
@@ -268,6 +283,7 @@ function rebuildTrayMenu() {
     ...[[MODES.DODGE, "Dodge · 自由让路"], [MODES.PET, "Pet · 互动与移动"], [MODES.PACMAN, "Pac-Man · 吃颗豆豆"]]
       .map(([value, label]) => ({ id: value, label, type: "radio", checked: state.mode === value, click: () => setMode(value) })),
     { type: "separator" },
+    { id: "cycle-mode", label: "切换到下一个模式", accelerator: MODE_SHORTCUT, registerAccelerator: false, click: cycleMode },
     { id: "chat", label: "和它说句话", accelerator: CHAT_SHORTCUT, registerAccelerator: false, click: showChat },
     { id: "hide", label: state.manualHidden ? "让它回来" : "老板来了，藏好", accelerator: HIDE_SHORTCUT, registerAccelerator: false, click: toggleHidden },
     { id: "recover", label: "找回宠物到当前屏幕", click: () => { state.manualHidden = false; pinPet(); recoverWindows({ focus: true }); rebuildTrayMenu(); } },
@@ -298,6 +314,7 @@ ipcMain.handle("mascot:source", event => {
   return mascotSource;
 });
 ipcMain.on("pet:ready", event => { if (fromPet(event)) { petReady = true; syncPet(); } });
+ipcMain.on("pet:frame",event=>{if(fromPet(event))tick();});
 function fromPet(event) { return event.sender === petWindow?.webContents && event.senderFrame === petWindow.webContents.mainFrame; }
 ipcMain.handle("chat:send", (event, prompt) => { if (!fromPet(event)) throw new Error("Invalid sender"); return askClaude(prompt); });
 ipcMain.on("chat:dismiss", event => { if (fromPet(event)) restorePetFrame(); });
@@ -325,7 +342,14 @@ export const ready = app.whenReady().then(() => {
   rebuildTrayMenu();
   registerShortcut(HIDE_SHORTCUT, toggleHidden, "快速隐藏");
   registerShortcut(CHAT_SHORTCUT, showChat, "聊天");
-  loop = setInterval(tick, 32);
+  registerShortcut(MODE_SHORTCUT, cycleMode, "循环切换模式");
+  reducedMotion=systemPreferences.getAnimationSettings().prefersReducedMotion;
+  // Recovery is independent of rAF: an unexpectedly hidden window stops its
+  // renderer clock, but must still be recoverable. Never unhide a manual hide.
+  loop = setInterval(()=>{
+    reducedMotion=systemPreferences.getAnimationSettings().prefersReducedMotion;
+    if(petReady&&petShouldShow(state)&&!petWindow.isVisible())syncPet();
+  },500);
   if (initialMode === MODES.PACMAN) createGameWindow();
   for (const event of ["display-added", "display-removed", "display-metrics-changed"]) screen.on(event, () => recoverWindows());
   for (const event of ["resume", "unlock-screen"]) powerMonitor.on(event, () => { recoverWindows(); });

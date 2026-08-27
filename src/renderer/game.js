@@ -52,7 +52,7 @@ function update(dt) {
   if (updateGame(game, dt, window.innerWidth, window.innerHeight)) {
     roundElement.textContent = game.level;
     speedElement.textContent = (pet.speed / 280).toFixed(2) + "×";
-    showLevelMessage("下一盘 · 脚步加快 10%");
+    showLevelMessage("下一盘 · 速度 ×1.3");
   }
   scoreElement.textContent = game.score;
 }

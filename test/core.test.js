@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clamp, cleanClaudeReply, limitUnicode, nextDodgeVelocity, controlVelocity, fitPet, gazeDirection, MODES, petShouldShow, normalizeMode } from "../src/core.js";
+import { clamp, cleanClaudeReply, limitUnicode, nextDodgeVelocity, controlVelocity, fitPet, gazeDirection, MODES, petShouldShow, normalizeMode, nextMode } from "../src/core.js";
 
 test("clamp keeps values inside bounds", () => {
   assert.equal(clamp(2, 5, 10), 5);
@@ -34,6 +34,10 @@ test("recovery clamps detached/negative displays and tiny work areas", () => {
 test("there are three modes and legacy control resolves to Pet", () => {
   assert.deepEqual(Object.values(MODES), ["dodge", "pet", "pacman"]);
   assert.equal(normalizeMode("control"), "pet");
+});
+test("the mode shortcut cycles Dodge, Pet and Pac-Man in order",()=>{
+  assert.equal(nextMode("dodge"),"pet");assert.equal(nextMode("pet"),"pacman");
+  assert.equal(nextMode("pacman"),"dodge");assert.equal(nextMode("control"),"pacman");
 });
 
 test("chat replies are capped by Unicode characters", () => {

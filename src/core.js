@@ -6,6 +6,10 @@ export const MODES = Object.freeze({
 export const PET_FRAME_SIZE = 132;
 export const PET_SPRITE_SIZE = 84;
 export function normalizeMode(mode) { return mode === "control" ? MODES.PET : mode; }
+export function nextMode(mode) {
+  const order=[MODES.DODGE,MODES.PET,MODES.PACMAN];
+  return order[(order.indexOf(normalizeMode(mode))+1)%order.length];
+}
 
 export function clamp(value, min, max) {
   return Math.min(Math.max(min, max), Math.max(min, value));

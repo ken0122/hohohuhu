@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("bluepet", {
   loadMascot: () => ipcRenderer.invoke("mascot:source"),
   ready: () => ipcRenderer.send("pet:ready"),
+  frame: () => ipcRenderer.send("pet:frame"),
   sendChat: (message) => ipcRenderer.invoke("chat:send", message),
   dismissChat: () => ipcRenderer.send("chat:dismiss"),
   exitGame: () => ipcRenderer.send("game:exit"),
