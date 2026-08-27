@@ -15,6 +15,10 @@ async function until(fn, timeout = 4000) {
   while (!await fn()) { if (Date.now() > deadline) throw new Error("Timed out waiting for runtime state"); await delay(30); }
 }
 const evaluate = code => getRuntime().petWindow.webContents.executeJavaScript(code);
+async function toggleAndWait() {
+  toggleHidden();
+  if(getRuntime().state.manualHidden)await until(()=>!getRuntime().hiding,700);
+}
 const results = [];
 async function check(name, run) {
   if (process.env.BLUEPET_TEST_MATCH && !new RegExp(process.env.BLUEPET_TEST_MATCH).test(name)) return;
@@ -97,6 +101,147 @@ try {
       await until(()=>!getRuntime().modeTransition,7000);await visiblePixels();
     } finally {screen.getCursorScreenPoint=realCursor;win.setPosition=realPosition;systemPreferences.getAnimationSettings=realAnimations;}
   });
+  await check("Dodge gaze: pupil tracks cursor during walking, chat, menu and restore",async()=>{
+    const realCursor=screen.getCursorScreenPoint;
+    let offset={x:400,y:0};
+    const eyeCenter=()=>{
+      const b=getRuntime().petWindow.getBounds();
+      return {x:b.x+(b.width-84)/2+31/64*84,y:b.y+b.height-7-84+29.5/64*84};
+    };
+    screen.getCursorScreenPoint=()=>{const eye=eyeCenter();return {x:eye.x+offset.x,y:eye.y+offset.y};};
+    const assertLook=async()=>{
+      const length=Math.hypot(offset.x,offset.y);
+      // Wait for an IPC/render frame, then verify the actual pupil transform.
+      await until(async()=>{
+        const actual=await evaluate(`(()=>{
+          const pupil=document.querySelector('.pupil');
+          const transform=new DOMMatrix(getComputedStyle(pupil).transform);
+          return {x:transform.m41+4,y:transform.m42+.3};
+        })()`);
+        return Math.abs(actual.x-(length?offset.x/length*4:0))<.1 &&
+          Math.abs(actual.y-(length?offset.y/length*4:0))<.1;
+      },1000).catch(async error=>{
+        const detail=await evaluate("(()=>{const s=document.querySelector('.mascot-svg'),t=new DOMMatrix(getComputedStyle(s.querySelector('.pupil')).transform);return {gaze:[s.style.getPropertyValue('--gaze-x'),s.style.getPropertyValue('--gaze-y')],actual:[t.m41+4,t.m42+.3],mode:document.body.dataset.mode,looking:s.dataset.looking};})()");
+        throw new Error(error.message+JSON.stringify({offset,detail,state:getRuntime().state,velocity:getRuntime().velocity,menuOpen:getRuntime().menuOpen}));
+      });
+    };
+    try {
+      setMode("dodge");await delay(150);
+      for(const direction of [{x:400,y:0},{x:0,y:400},{x:-400,y:0},{x:0,y:-400},{x:300,y:300}]) {
+        offset=direction;await assertLook();
+      }
+      showChat();await delay(100);
+      // These points are inside the speech surface: body stays still, eye follows.
+      const before=getRuntime().petWindow.getBounds();
+      offset={x:-60,y:-100};await assertLook();
+      offset={x:60,y:-100};await assertLook();
+      assert.deepEqual(getRuntime().petWindow.getBounds(),before);
+      getRuntime().trayMenu.emit("menu-will-show",{});
+      offset={x:0,y:300};await assertLook();
+      offset={x:0,y:0};await assertLook();
+      getRuntime().trayMenu.emit("menu-will-close",{});
+      await toggleAndWait();offset={x:-300,y:200};await toggleAndWait();await assertLook();
+      restorePetFrame();await assertLook();
+    } finally {
+      getRuntime().trayMenu.emit("menu-will-close",{});
+      screen.getCursorScreenPoint=realCursor;setMode("pet");
+    }
+  });
+  await check("Dodge chat: no wander, native avoidance, input stability, hit testing and bubble geometry",async()=>{
+    setMode("pet");await until(()=>!getRuntime().modeTransition,7000);
+    const win=getRuntime().petWindow,origin=getRuntime().position;
+    const area=screen.getDisplayMatching(win.getBounds()).workArea;
+    const target={x:area.x+area.width/2-66,y:area.y+area.height/2-66};
+    for(const request of [{phase:"start",point:origin},{phase:"move",point:target},{phase:"end"}]) {
+      await evaluate("window.bluepet.dragPet("+JSON.stringify(request)+")");await delay(40);
+    }
+    const realCursor=screen.getCursorScreenPoint;
+    let cursor={x:area.x+10,y:area.y+10};
+    screen.getCursorScreenPoint=()=>({...cursor});
+    try {
+      setMode("dodge");showChat();await delay(400);
+      const resting=win.getBounds();await delay(600);assert.deepEqual(win.getBounds(),resting);
+      assert.equal(getRuntime().ignoringMouse,true);
+      const center={x:resting.x+136,y:resting.y+193};
+      cursor={x:center.x+230,y:center.y};await delay(60);
+      cursor={x:center.x+100,y:center.y};await delay(130);
+      assert.ok(win.getBounds().x<resting.x-20,"expanded native chat window dodges the cursor");
+      assert.deepEqual([win.getBounds().width,win.getBounds().height],[272,242]);
+      cursor={x:area.x+10,y:area.y+10};await delay(1200);
+      const settled=win.getBounds();await delay(400);assert.deepEqual(win.getBounds(),settled);
+      cursor={x:settled.x+65,y:settled.y+122};await delay(100);
+      assert.equal(getRuntime().ignoringMouse,false);
+      win.webContents.sendInputEvent({type:"mouseDown",x:65,y:122,button:"left",clickCount:1});
+      win.webContents.sendInputEvent({type:"mouseUp",x:65,y:122,button:"left",clickCount:1});
+      await win.webContents.insertText("你好，呼噜呼噜");await delay(300);
+      assert.equal(await evaluate("document.querySelector('#message').value"),"你好，呼噜呼噜");
+      assert.deepEqual(win.getBounds(),settled,"typing does not chase the window");
+      for(const text of ["悄悄说吧，我会小声回答。","呼".repeat(50),"a".repeat(50),"👨‍👩‍👧‍👦".repeat(50),"暂时没连上，请检查网络和本机 DeepSeek 配置后再试。"]) {
+        await evaluate("document.querySelector('#reply').textContent="+JSON.stringify(text));
+        assert.ok(await evaluate(`(()=>{
+          const input=document.querySelector('#message'),r=input.getBoundingClientRect();
+          const bubble=document.querySelector('.speech').getBoundingClientRect();
+          const reply=document.querySelector('#reply').getBoundingClientRect();
+          return bubble.width===248&&bubble.height===140&&r.bottom<=bubble.bottom-12&&reply.bottom<=r.top-8&&
+            [r.left+4,r.left+r.width/2,r.right-4].every(x=>document.elementFromPoint(x,r.top+r.height/2)===input)&&
+            getComputedStyle(document.querySelector('.speech'),'::after').content==='none';
+        })()`));
+      }
+      await evaluate("document.querySelector('#reply').textContent='悄悄说吧，我会小声回答。';document.querySelector('#message').value=''");
+      await delay(80); // Let the native compositor paint the reset preview text.
+      await writeFile(path.resolve("work/huluhulu-chat-compact.png"),(await win.webContents.capturePage()).toPNG());
+      restorePetFrame();await delay(100);
+      assert.equal(await evaluate("document.querySelector('.speech').inert"),true);
+    } finally {screen.getCursorScreenPoint=realCursor;setMode("pet");}
+  });
+  await check("Hide particles: Pet, Dodge, chat and Pac-Man finish within 500ms and cancel safely",async()=>{
+    const realAnimations=systemPreferences.getAnimationSettings;
+    systemPreferences.getAnimationSettings=()=>({...realAnimations.call(systemPreferences),prefersReducedMotion:false});
+    try {
+      for(const mode of ["pet","dodge","chat","pacman"]) {
+        setMode(mode==="chat"?"pet":mode);if(mode==="chat")showChat();
+        const win=mode==="pacman"?getRuntime().gameWindow:getRuntime().petWindow;
+        await until(()=>win.isVisible()&&!win.webContents.isLoading());
+        await until(()=>win.webContents.executeJavaScript("Boolean(document.querySelector('.hide-particles'))"));
+        await delay(100);
+        const started=performance.now();toggleHidden();
+        assert.equal(getRuntime().state.manualHidden,true);
+        await delay(120);assert.equal(win.isVisible(),true);
+        assert.equal(await win.webContents.executeJavaScript("document.body.classList.contains('is-dissolving')"),true);
+        const pixels=await win.webContents.executeJavaScript("(()=>{const c=document.querySelector('.hide-particles'),p=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<p.length;i+=4)if(p[i])n++;return n;})()");
+        assert.ok(pixels>20,"real particle pixels are rendered");
+        if(mode==="pet") { await delay(80);await writeFile(path.resolve("work/huluhulu-hide.png"),(await win.webContents.capturePage()).toPNG()); }
+        await until(()=>!win.isVisible(),500);
+        const elapsed=performance.now()-started;
+        assert.ok(elapsed<500,"native hide deadline: "+elapsed);
+        console.log("Hide duration:",mode,Math.round(elapsed),"ms");
+        await delay(550);assert.equal(win.isVisible(),false,"watchdog must respect manual hide");
+        toggleHidden();await delay(100);assert.equal(win.isVisible(),true);
+        assert.equal(await win.webContents.executeJavaScript("document.body.classList.contains('is-dissolving')"),false);
+        toggleHidden();await delay(100);toggleHidden();await delay(500);
+        assert.equal(win.isVisible(),true,"old completion must not hide a restored pet");
+      }
+      setMode("pet");await delay(100);toggleHidden();await delay(80);showChat();await delay(500);
+      assert.equal(getRuntime().petWindow.isVisible(),true);assert.equal(getRuntime().state.chatOpen,true);
+      toggleHidden();await delay(80);setMode("dodge");await delay(500);
+      assert.equal(getRuntime().petWindow.isVisible(),true);assert.equal(getRuntime().state.mode,"dodge");
+    } finally {systemPreferences.getAnimationSettings=realAnimations;setMode("pet");}
+  });
+  await check("Hide reduced motion: startup preference and live changes skip particles",async()=>{
+    setMode("pet");const win=getRuntime().petWindow;
+    const realAnimations=systemPreferences.getAnimationSettings;
+    systemPreferences.getAnimationSettings=()=>({...realAnimations.call(systemPreferences),prefersReducedMotion:false});
+    win.webContents.debugger.attach("1.3");
+    const media=value=>win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia",{features:[{name:"prefers-reduced-motion",value}]});
+    try {
+      await media("reduce");win.reload();await delay(450);
+      await until(()=>evaluate("Boolean(document.querySelector('.hide-particles'))"));
+      toggleHidden();await until(()=>!win.isVisible(),300);toggleHidden();await delay(100);
+      await media("no-preference");await delay(100);toggleHidden();await delay(100);
+      assert.equal(win.isVisible(),true);await media("reduce");await until(()=>!win.isVisible(),300);
+      toggleHidden();await delay(100);assert.equal(win.isVisible(),true);
+    } finally {await media("no-preference");win.webContents.debugger.detach();systemPreferences.getAnimationSettings=realAnimations;setMode("pet");}
+  });
   await check("eye stays open by default under CSP, with only brief natural blinks",async()=>{
     const eyeY=()=>evaluate("new DOMMatrix(getComputedStyle(document.querySelector('.lid')).transform).m42");
     // Previous checks may finish during a legitimate blink; begin the sampling
@@ -121,16 +266,20 @@ try {
     assert.ok(longest<350,"no lingering half-closed lid");
     console.log("Eye sampling:", {samples,closed,longest:Math.round(longest)});
   });
-  await check("white transparent menu-bar icon, not a boxed app icon", async () => {
+  await check("system-tinted outline menu-bar icon and plain quit item", async () => {
     const icon = nativeImage.createFromPath(path.resolve("assets/tray.png"));
     assert.equal(icon.isEmpty(),false);
     const b=icon.toBitmap();let painted=0,transparent=0;
     for(let i=0;i<b.length;i+=4) {
       // Native bitmap channels are premultiplied by alpha on macOS.
-      if(b[i+3]>230) { assert.ok([b[i],b[i+1],b[i+2]].every(v=>Math.abs(v-b[i+3])<=2)); painted++; }
+      if(b[i+3]>230) { assert.ok([b[i],b[i+1],b[i+2]].every(v=>v<=2)); painted++; }
       if(!b[i+3])transparent++;
     }
-    assert.ok(painted>20&&transparent>20);
+    assert.ok(painted>5&&transparent>100);
+    assert.equal(app.getName(),"呼噜呼噜");
+    const quit=getRuntime().trayMenu.getMenuItemById("quit");
+    assert.equal(quit.label,"退出呼噜呼噜");assert.equal(quit.icon,null);
+    assert.equal(quit.role,null);
     assert.equal(getRuntime().tray.listenerCount("click"),0);
     assert.ok(getRuntime().tray.getBounds().width>0);
     assert.deepEqual(getRuntime().trayMenu.items.filter(item=>item.type==="radio").map(item=>item.id),["dodge","pet","pacman"]);
@@ -149,8 +298,8 @@ try {
     assert.equal(getRuntime().state.chatOpen,false);await until(()=>getRuntime().gameWindow?.isVisible());
     await delay(420);cycleMode();assert.equal(getRuntime().state.mode,"dodge");
     assert.equal(getRuntime().gameWindow,undefined);
-    toggleHidden();await delay(420);cycleMode();assert.equal(getRuntime().state.mode,"dodge");
-    assert.equal(getRuntime().petWindow.isVisible(),false);toggleHidden();
+    await toggleAndWait();await delay(420);cycleMode();assert.equal(getRuntime().state.mode,"dodge");
+    assert.equal(getRuntime().petWindow.isVisible(),false);await toggleAndWait();
   });
   await check("Frame clock: idle avoids native position writes and hidden frames stop",async()=>{
     setMode("pet");await until(()=>!getRuntime().modeTransition,7000);await delay(100);
@@ -158,9 +307,9 @@ try {
     win.setPosition=function(...args){writes++;return real.apply(this,args);};
     try {
       await delay(200);assert.equal(writes,0,"stationary Pet does not move its native window every frame");
-      setMode("dodge");await delay(100);toggleHidden();const hidden=getRuntime().position;
+      setMode("dodge");await delay(100);await toggleAndWait();const hidden=getRuntime().position;
       writes=0;await delay(700);assert.equal(writes,0);assert.deepEqual(getRuntime().position,hidden);
-      assert.equal(win.isVisible(),false);toggleHidden();await delay(100);assert.equal(win.isVisible(),true);
+      assert.equal(win.isVisible(),false);await toggleAndWait();await delay(100);assert.equal(win.isVisible(),true);
     } finally {win.setPosition=real;}
   });
   for(const mode of ["dodge","pet"]) {
@@ -168,8 +317,8 @@ try {
       setMode(mode); await delay(180);
       assert.equal(getRuntime().petWindow.isVisible(),true);
       await visiblePixels();
-      toggleHidden(); assert.equal(getRuntime().petWindow.isVisible(),false);
-      toggleHidden(); await delay(160); assert.equal(getRuntime().petWindow.isVisible(),true); await visiblePixels();
+      await toggleAndWait(); assert.equal(getRuntime().petWindow.isVisible(),false);
+      await toggleAndWait(); await delay(160); assert.equal(getRuntime().petWindow.isVisible(),true); await visiblePixels();
       showChat(); await delay(140); assert.equal(await evaluate("document.body.classList.contains('chat-open')"),true);
       restorePetFrame(); await delay(220); assert.deepEqual(await evaluate("[innerWidth,innerHeight]"),[132,132]);
       await visiblePixels();
@@ -178,7 +327,7 @@ try {
     });
   }
   await check("opening/cancelling status menu leaves hidden state and chat untouched",async()=>{
-    setMode("pet"); toggleHidden();
+    setMode("pet"); await toggleAndWait();
     const before=getRuntime().state;
     const menu=getRuntime().trayMenu;
     menu.emit("menu-will-show",{}); getRuntime().tray.emit("click",{});
@@ -187,7 +336,7 @@ try {
     menu.getMenuItemById("pet").click(); await delay(150); assert.equal(getRuntime().petWindow.isVisible(),true);
   });
   await check("real native context menu opens and closes without revealing the hidden pet",async()=>{
-    setMode("pet"); toggleHidden();
+    setMode("pet"); await toggleAndWait();
     const {tray,trayMenu}=getRuntime(),before=getRuntime().state;
     let opened=false,closed=false;
     trayMenu.once("menu-will-show",()=>{opened=true;});
@@ -341,7 +490,7 @@ try {
     assert.equal(getRuntime().dragPending,false);assert.deepEqual(getRuntime().position,inChat);
     restorePetFrame();await delay(100);
     await send({phase:"start",point:inChat});await until(()=>getRuntime().dragPending);
-    toggleHidden();assert.equal(getRuntime().dragPending,false);toggleHidden();await delay(100);
+    await toggleAndWait();assert.equal(getRuntime().dragPending,false);await toggleAndWait();await delay(100);
     await send({phase:"start",point:getRuntime().position});await until(()=>getRuntime().dragPending);
     setMode("dodge");assert.equal(getRuntime().dragPending,false);setMode("pet");
   });
@@ -364,10 +513,10 @@ try {
     await evaluate("document.querySelector('.pet').dispatchEvent(new PointerEvent('pointerenter'))");
     assert.notEqual(await evaluate("document.body.dataset.reaction"),"idle-stretch");
     showChat(); await delay(1200); assert.equal(await evaluate("document.body.dataset.reaction"),undefined);
-    toggleHidden(); await delay(100);
+    await toggleAndWait(); await delay(100);
     assert.equal(await evaluate("document.querySelector('.lid').getAnimations().length"),0);
     assert.equal(await evaluate("new DOMMatrix(getComputedStyle(document.querySelector('.lid')).transform).m42"),-20);
-    toggleHidden(); restorePetFrame(); getRuntime().trayMenu.emit("menu-will-close",{});
+    await toggleAndWait(); restorePetFrame(); getRuntime().trayMenu.emit("menu-will-close",{});
   });
   await check("reduced-motion mode keeps eyes open and disables decorative motion",async()=>{
     const win=getRuntime().petWindow;
@@ -408,16 +557,18 @@ try {
       assert.deepEqual(await evaluate("document.querySelector('path.body').getAnimations().map(a=>a.effect.getTiming().duration)"),[220]);
       await delay(100);
       assert.ok(getRuntime().petWindow.getBounds().x<before.x-45,"native window visibly travels away");
+      assert.ok(Number(await evaluate("parseFloat(document.querySelector('.mascot-svg').style.getPropertyValue('--gaze-x'))"))>0,
+        "eye watches the cursor on the right while the native window flees left");
       assert.equal(getRuntime().petWindow.isVisible(),true);await visiblePixels();
       await delay(700);
       assert.equal(getRuntime().dodgeMotion.reflex,false);
       assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.gait"),"walk");
       assert.ok(Math.hypot(...Object.values(getRuntime().dodgeMotion.velocity))<initialSpeed/2);
       for(const pause of ["chat","hide"]) {
-        if(pause==="chat") showChat(); else toggleHidden();
+        if(pause==="chat") showChat(); else await toggleAndWait();
         await delay(80);
         cursor={x:getRuntime().position.x+90,y:getRuntime().position.y+66};
-        if(pause==="chat") restorePetFrame(); else toggleHidden();
+        if(pause==="chat") restorePetFrame(); else await toggleAndWait();
         await delay(80);assert.equal(getRuntime().dodgeMotion.reflex,false,"resume discards stale cursor samples");
         assert.equal(getRuntime().petWindow.isVisible(),true);
       }
@@ -438,8 +589,8 @@ try {
     assert.deepEqual(await evaluate("document.querySelector('path.body').getAnimations().map(a=>a.effect.getTiming().duration)"),[gait==="run"?220:680]);
     await visiblePixels();
     await writeFile(path.resolve("work/dodge-original-shape.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
-    toggleHidden(); await delay(3300); assert.equal(getRuntime().petWindow.isVisible(),false);
-    toggleHidden(); assert.equal(getRuntime().petWindow.isVisible(),true);
+    await toggleAndWait(); await delay(3300); assert.equal(getRuntime().petWindow.isVisible(),false);
+    await toggleAndWait(); assert.equal(getRuntime().petWindow.isVisible(),true);
   });
   await check("Dodge chat and native menu roundtrips keep the current visibility",async()=>{
     showChat(); await delay(300); assert.equal(getRuntime().petWindow.isVisible(),true);
@@ -456,7 +607,7 @@ try {
     screen.emit("display-removed",{},screen.getPrimaryDisplay()); await delay(150);
     const b=getRuntime().petWindow.getBounds(),d=screen.getDisplayMatching(b).workArea;
     assert.ok(b.x>=d.x&&b.y>=d.y&&b.x+b.width<=d.x+d.width&&b.y+b.height<=d.y+d.height);
-    toggleHidden();powerMonitor.emit("resume");assert.equal(getRuntime().petWindow.isVisible(),false);toggleHidden();
+    await toggleAndWait();powerMonitor.emit("resume");assert.equal(getRuntime().petWindow.isVisible(),false);await toggleAndWait();
     getRuntime().petWindow.reload(); await delay(500); await visiblePixels();
     const old=getRuntime().petWindow.id;getRuntime().petWindow.close();
     await until(()=>getRuntime().petWindow&&getRuntime().petWindow.id!==old&&!getRuntime().petWindow.webContents.isLoading());
@@ -495,7 +646,7 @@ try {
     await delay(60);
     assert.ok((await js("document.querySelector('#game-pet').getBoundingClientRect().top"))>hud.bottom);
     await writeFile(path.resolve("work/pacman-round-3.png"),(await win.webContents.capturePage()).toPNG());
-    toggleHidden();assert.equal(win.isVisible(),false);toggleHidden();assert.equal(win.isVisible(),true);
+    await toggleAndWait();assert.equal(win.isVisible(),false);await toggleAndWait();assert.equal(win.isVisible(),true);
     assert.equal(await js("document.querySelectorAll('.lid').length"),0);
     assert.equal(await js("document.querySelector('#round').textContent"),"3");
     win.webContents.sendInputEvent({type:"keyDown",keyCode:"ESCAPE"});await delay(180);assert.equal(getRuntime().state.mode,"pet");await visiblePixels();

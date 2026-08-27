@@ -1,15 +1,18 @@
 ---
-name: Blue One-Eye Pet
+name: 呼噜呼噜
 description: 透明桌面上的蓝色单眼小伙伴，先让路，再卖萌。
 colors:
   blue: "#4569df"
   blue-dark: "#2949b6"
   ink: "#17234b"
   muted: "#67749a"
+  ground: "rgba(25, 43, 98, .18)"
+  affection-shadow: "rgba(37, 64, 155, .24)"
+  speech-shadow: "rgba(22, 39, 91, .16)"
   paper: "#fbfcff"
   field: "#edf1ff"
   field-focus: "#f2f5ff"
-  placeholder: "#7683a8"
+  placeholder: "#626f94"
   affection: "#6e89f1"
   night: "rgba(7, 12, 34, .82)"
   hud: "rgba(7, 12, 34, .94)"
@@ -23,12 +26,14 @@ colors:
 typography:
   body:
     fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif'
-    fontSize: "15px"
-    lineHeight: 1.48
-    letterSpacing: "-.01em"
+    fontSize: "13px"
+    lineHeight: "18px"
+    letterSpacing: "normal"
+  small:
+    fontSize: "11px"
   status:
-    fontSize: "12px"
-    fontWeight: 700
+    fontSize: "11px"
+    fontWeight: 500
   hint:
     fontSize: "13px"
   score:
@@ -36,31 +41,33 @@ typography:
   level:
     fontSize: "12px"
 rounded:
-  bubble: "22px"
-  field: "13px"
+  bubble: "20px 20px 24px 24px"
+  bubble-bottom: "24px"
+  pet-focus: "14px"
+  field: "12px"
   dismiss: "7px"
   game-button: "10px"
 spacing:
-  control-gap: "8px"
-  form-top: "12px"
+  control-gap: "6px"
+  form-top: "8px"
   hud-gap: "20px"
 components:
   speech:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.ink}"
     rounded: "{rounded.bubble}"
-    padding: "18px 18px 14px"
+    padding: "12px"
   chat-input:
     backgroundColor: "{colors.field}"
     textColor: "{colors.ink}"
     rounded: "{rounded.field}"
-    padding: "0 14px"
-    height: "42px"
+    padding: "0 10px"
+    height: "32px"
   send-button:
     backgroundColor: "{colors.blue}"
     textColor: "white"
-    rounded: "{rounded.field}"
-    size: "42px"
+    rounded: "50%"
+    size: "32px"
   send-button-hover:
     backgroundColor: "{colors.blue-dark}"
   dismiss-button:
@@ -78,9 +85,9 @@ components:
     backgroundColor: "{colors.game-blue}"
 ---
 
-# Design System: Blue One-Eye Pet
+# Design System: 呼噜呼噜
 
-本文对照 **0.4.1** 源码维护当前视觉与交互约束，不代表本轮已完成所有桌面验收。尺寸以 `src/core.js`、`src/main.js`、`src/renderer/game-state.js` 和对应 CSS 为准；使用与发布说明见 `README.md`。`PRODUCT.md` 是早期构想，不作为当前功能清单。
+本文对照 **0.4.2** 源码维护当前视觉与交互约束，不代表本轮已完成所有桌面验收。尺寸以 `src/core.js`、`src/main.js`、`src/renderer/game-state.js` 和对应 CSS 为准；使用与发布说明见 `README.md`。`PRODUCT.md` 是早期构想，不作为当前功能清单。
 
 ## Overview
 
@@ -115,17 +122,17 @@ components:
 
 ## Layout
 
-桌面宠物采用绝对定位而非网页栅格：普通窗口为 **132×132px**，角色图像盒为 **84×84px**，水平居中、底部留 7px。聊天窗口为 **368×300px**，气泡左右留 12px、顶部留 10px，尾尖指向下方角色；靠屏幕边缘时由主进程按显示器工作区约束窗口位置。原生窗口坐标与 CSS 尺寸使用逻辑像素，不等同于 Retina 截图的物理像素。
+桌面宠物采用绝对定位而非网页栅格：普通窗口为 **132×132px**，角色图像盒为 **84×84px**，水平居中、底部留 7px。聊天窗口为 **272×242px**，气泡左右留 12px、顶部留 10px，宽 248px、高 140px，无拼接尾尖；靠屏幕边缘时由主进程按显示器工作区约束窗口位置。原生窗口坐标与 CSS 尺寸使用逻辑像素，不等同于 Retina 截图的物理像素。
 
 游戏窗口覆盖光标所在显示器的完整边界，画布铺满窗口。顶部 HUD 横跨窗口、高 **96px**，以 `12px 28px` 内边距排列分数、轮次、速度倍率、方向键提示和退出按钮；过关短句位于 HUD 内，不覆盖游玩区域。宽度不超过 600px 时，HUD 缩小间距并将右侧操作纵向排列；这只是窄窗口适配，不代表支持手机。
 
 ## Elevation & Depth
 
-宠物脚下用低透明度模糊椭圆暗示落地。聊天气泡采用双层柔和阴影，发送按钮采用较短蓝色阴影；HUD 以深色半透明背景与游戏区区分，不使用悬浮卡片阴影。豆豆的发光属于游戏反馈，不扩散成通用界面装饰。精确值见 `src/renderer/pet.css` 与 `src/renderer/game.js`，仓库没有独立 sidecar。
+宠物脚下用低透明度模糊椭圆暗示落地。聊天气泡采用单层轻阴影，发送按钮不加投影；HUD 以深色半透明背景与游戏区区分，不使用悬浮卡片阴影。豆豆的发光属于游戏反馈，不扩散成通用界面装饰。精确值见 `src/renderer/pet.css` 与 `src/renderer/game.js`，不以旧 sidecar 作为当前视觉依据。
 
 ## Shapes
 
-角色保持双角、单眼、柔软下摆的 SVG 轮廓。聊天气泡是大圆角加旋转方形尾尖；输入与发送按钮共享圆角和高度。HUD 为直角通栏，退出按钮使用 10px 圆角。无额外卡片、侧栏或常驻控制面板。
+角色保持双角、单眼、柔软下摆的 SVG 轮廓。聊天气泡使用柔软的不对称圆角，无尾尖和遮挡输入的伪元素；输入为 12px 圆角，发送为圆形，均高 32px。HUD 为直角通栏，退出按钮使用 10px 圆角。无额外卡片、侧栏或常驻控制面板。
 
 ## Components
 
@@ -135,19 +142,23 @@ components:
 
 眼睛默认完全睁开，每隔 3.8–7.2 秒眨眼约 180ms；亲昵眼部反应约 280ms 后恢复睁开。Pet 接近或 hover 时上移、微转并轻微压缩，三颗蓝色爱心错峰飘起；无互动、无移动且光标不靠近时，间隔 12–22 秒偶尔张望或伸展。摸头、挠痒、戳肚子、贴贴和长按抱抱有独立短反馈。
 
-Dodge 点击穿透且持续可见，快速逼近触发带冷却与衰减的弹射；Pet 支持拖拽与方向键。Pet / Dodge 切换保留惯性，回到上次 Pet 停留位置时减速。拖拽阈值为 6px、长按约 650ms，拖拽不得兼触点击或抱抱；聊天、手动隐藏与模式切换需结束当前拖拽。
+Dodge 的黑色眼珠始终朝向光标，以实际窗口中的眼白中心计算方向；视线独立于身体速度，光标视线按帧更新、不叠加 CSS 追赶过渡，闪避跑开、聊天停稳和打开菜单时仍跟随，Pet / Pac-Man 仍按原有交互控制视线。Dodge 点击穿透且持续可见，快速逼近触发带冷却与衰减的弹射；Pet 支持拖拽与方向键。Pet / Dodge 切换保留惯性，回到上次 Pet 停留位置时减速。拖拽阈值为 6px、长按约 650ms，拖拽不得兼触点击或抱抱；聊天、手动隐藏与模式切换需结束当前拖拽。
 
 系统「减少动态效果」关闭自动眨眼、身体路径形变、稀疏自主动作与 Dodge 弹射，保留普通避让和用户控制移动；CSS 互动动画停用或显著缩短。手动隐藏独立于模式，不能因打开菜单、循环快捷键或自动恢复而自行现身。
 
+隐藏动效以原 SVG 的运行时副本取样，70ms 微膨胀后散为蓝白粒子，总长 420ms，主进程 460ms 兜底。立即释放鼠标命中；恢复、聊天或选模式会取消未完成效果，旧回调不能再隐藏新状态。减少动态效果启动前开启或运行中开启均跳过/结束粒子；游戏一并暂停，恢复保留进度。源 SVG 不变。
+
+菜单栏使用源角色衍生的细轮廓与单眼，黑色透明模板图由 macOS 自动着色；末项「退出呼噜呼噜」是无图标的普通命令，避免系统 quit role 附带图标。
+
 ### Speech Bubble
 
-从角色头顶向上展开，底部为变换原点。状态标签、短回复和单行输入依次排列；回复区使用礼貌的实时播报。关闭时气泡设置 `inert` 与 `aria-hidden`，不能留在键盘焦点序列中。等待状态追加短条动画并禁用输入和发送按钮，回复和错误都留在同一气泡中。当前 renderer 对请求失败显示统一错误提示，不区分鉴权、限流与超时。
+从角色头顶向上展开，底部为变换原点。Dodge 聊天只保留光标避让和衰减反射，不自主散步；光标在气泡内时停稳，气泡外点击穿透。聊天原生窗口与物理角色锚点一起移动，并整体约束在显示器工作区内。状态标签、短回复和单行输入依次排列；回复区使用礼貌的实时播报。关闭时气泡设置 `inert` 与 `aria-hidden`，不能留在键盘焦点序列中。等待状态让单眼标记轻轻呼吸并禁用输入和发送按钮，回复和错误都留在同一气泡中。当前 renderer 对请求失败显示统一错误提示，不区分鉴权、限流与超时。
 
 聊天只在用户提交后由主进程请求固定的 `deepseek-v4-flash`；不启动 Claude CLI，不向 renderer 暴露凭据，也不持久化对话。输入上限 500 个 UTF-16 代码单元，回复最多 50 个可见字符；交互设计不得假设连续多轮上下文或工具调用。
 
 ### Input & Buttons
 
-输入聚焦时浅化背景并显示品牌蓝内描边。发送使用纸飞机图标，hover 加深、键盘聚焦显示外轮廓；禁用时降低不透明度。Esc 是气泡右上方的轻量关闭按钮。游戏退出按钮保留清楚的文字动作与焦点轮廓。
+输入聚焦时浅化背景并显示品牌蓝内描边。发送使用向上箭头图标，hover 加深、键盘聚焦显示外轮廓；禁用时降低不透明度。Esc 是气泡右上方的轻量关闭按钮。游戏退出按钮保留清楚的文字动作与焦点轮廓。
 
 ### Game Canvas & HUD
 

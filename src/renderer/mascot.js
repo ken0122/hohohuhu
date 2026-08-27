@@ -35,18 +35,21 @@ export async function createMascot(host, { eyelids = true } = {}) {
     svg,
     setActive: eyes.setActive,
     react: eyes.react,
-    motion({ x = 0, y = 0, gait: nextGait = "idle" }) {
-      const magnitude = Math.hypot(x, y);
-      if (magnitude) {
+    motion({ x = 0, y = 0, gait: nextGait = "idle", gaze }) {
+      svg.dataset.cursorGaze = String(Boolean(gaze));
+      const look = gaze ?? { x, y };
+      const magnitude = Math.hypot(look.x, look.y);
+      if (gaze || magnitude) {
         svg.dataset.looking = "true";
-        svg.style.setProperty("--gaze-x", (x / magnitude * 4).toFixed(2) + "px");
-        svg.style.setProperty("--gaze-y", (y / magnitude * 4).toFixed(2) + "px");
+        svg.style.setProperty("--gaze-x", (magnitude ? look.x / magnitude * 4 : 0).toFixed(2) + "px");
+        svg.style.setProperty("--gaze-y", (magnitude ? look.y / magnitude * 4 : 0).toFixed(2) + "px");
       }
       if (!["walk", "run"].includes(nextGait)) nextGait = "idle";
       if (nextGait !== gait) { gait = nextGait; svg.dataset.gait = gait; animateShape(); }
     },
     reset() {
       gait = "idle"; svg.dataset.gait = gait; delete svg.dataset.looking;
+      delete svg.dataset.cursorGaze;
       animateShape();
     },
   };

@@ -41,7 +41,7 @@ try {
     "--mac", "dmg", "zip", `--${process.arch}`, "--publish", "never",
     `-c.directories.output=${output}`,
     "-c.mac.identity=null", "-c.mac.notarize=false",
-    "-c.artifactName=Blue-One-Eye-Pet-${version}-mac-${arch}-unsigned.${ext}",
+    "-c.artifactName=呼噜呼噜-${version}-mac-${arch}-unsigned.${ext}",
   ], false, { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" });
 
   const [packed] = JSON.parse(run("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", output], true));
@@ -65,13 +65,13 @@ try {
   await copyFile(path.join(root, "assets/blue-one-eye-mascot.svg"), path.join(output, "assets/blue-one-eye-mascot.svg"));
   await writeFile(path.join(output, "SHA256SUMS"), (await Promise.all(names.map(async name =>
     `${await sha256(path.join(output, name))}  ${name}`))).join("\n") + "\n");
-  await writeFile(path.join(output, "RELEASE.md"), `# Blue One-Eye Pet v${pkg.version}\n\n` +
+  await writeFile(path.join(output, "RELEASE.md"), `# 呼噜呼噜 v${pkg.version}\n\n` +
     `- 架构：macOS ${process.arch}；打包时间：${new Date().toISOString()}。\n` +
     `- 基础提交：${sourceCommit}；工作区${dirty ? "含未提交改动，产物不是该提交的干净快照" : "干净"}。\n` +
     `- 无 Developer ID 签名，未经 Apple 公证；未上传 GitHub / npm。\n` +
     `- 已通过：Node 单测、DMG 完整性、ZIP 完整性、npm 文件清单检查。\n` +
     `- 本命令不运行桌面交互测试，不发送真实聊天请求。\n\n` +
-    `## 安装\n\nDMG / ZIP：将 Blue One-Eye Pet.app 放进 Applications 后打开。\n` +
+    `## 安装\n\nDMG / ZIP：将 呼噜呼噜.app 放进 Applications 后打开。\n` +
     `CLI（Node.js 22.12+）：\n\n\`\`\`bash\nnpm install -g ./${packed.filename}\nbluepet\n\`\`\`\n\n` +
     `在本目录执行 \`shasum -a 256 -c SHA256SUMS\` 校验三个安装包。\n\n` +
     `功能与使用说明见同目录 README.md；AGENTS.md 为项目协作指南。\n` +

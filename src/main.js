@@ -2,14 +2,14 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, Notification, powerMonitor, screen, systemPreferences, Tray } from "electron";
-import { clamp, controlVelocity, fitPet, MODES, petShouldShow, normalizeMode, nextMode, PET_FRAME_SIZE, PET_SPRITE_SIZE, validDragPoint, dragPosition } from "./core.js";
+import { CHAT_OFFSET, chatFrame, chatMotionBounds, cursorInSpeech, controlVelocity, fitPet, MODES, petShouldShow, normalizeMode, nextMode, PET_FRAME_SIZE, PET_SPRITE_SIZE, validDragPoint, dragPosition } from "./core.js";
 import { askClaude } from "./chat.js";
 import { createDodgeMotion } from "./dodge.js";
 import { arriveAt, launchVelocity } from "./mode-motion.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PET_SIZE = PET_FRAME_SIZE;
-const CHAT_SIZE = { width: 368, height: 300 };
+app.setName("呼噜呼噜");
 const HIDE_SHORTCUT = process.env.BLUEPET_HIDE_SHORTCUT || "Control+Alt+B";
 const CHAT_SHORTCUT = process.env.BLUEPET_CHAT_SHORTCUT || "Control+Alt+Space";
 const MODE_SHORTCUT = process.env.BLUEPET_MODE_SHORTCUT || "Control+Alt+Command+M";
@@ -26,12 +26,25 @@ let dragSession;
 const dodge = createDodgeMotion();
 let dodgeMotion;
 let modeTransition,petHome;
+let hideAnimation, hideSerial=0, ignoringMouse;
 const keys = new Set();
 const webPreferences = { preload: path.join(dirname, "preload.cjs"), contextIsolation: true,
   sandbox: true, nodeIntegration: false, backgroundThrottling: false };
 
 function send(channel, payload) {
   if (petReady && petWindow && !petWindow.isDestroyed()) petWindow.webContents.send(channel, payload);
+}
+function sendPetMotion(motion, cursor = screen.getCursorScreenPoint()) {
+  if (state.mode === MODES.DODGE && petReady && petWindow && !petWindow.isDestroyed()) {
+    const frame = petWindow.getBounds();
+    // SVG eye center (31, 29.5), mapped into the actual native frame.
+    // Gaze is independent of escape velocity, including when chat/menu freezes movement.
+    motion = { ...motion, gaze: {
+      x: cursor.x - (frame.x + (frame.width - PET_SPRITE_SIZE) / 2 + 31 / 64 * PET_SPRITE_SIZE),
+      y: cursor.y - (frame.y + frame.height - 7 - PET_SPRITE_SIZE + 29.5 / 64 * PET_SPRITE_SIZE),
+    } };
+  }
+  send("pet:motion", motion);
 }
 function currentDisplay() {
   return screen.getDisplayNearestPoint({ x: Math.round(position.x + PET_SIZE / 2), y: Math.round(position.y + PET_SIZE / 2) });
@@ -44,13 +57,14 @@ function pinPet(display = cursorDisplay()) {
 }
 function cancelModeTransition() { modeTransition=undefined;velocity={x:0,y:0}; }
 function movePetWindow() {
-  const x=Math.round(position.x),y=Math.round(position.y);
+  const frame=state.chatOpen?petFrame():position;
+  const x=Math.round(frame.x),y=Math.round(frame.y);
   if(nativePosition?.x===x&&nativePosition?.y===y)return;
   petWindow.setPosition(x,y,false);nativePosition={x,y};
 }
 function stopControl() {
   keys.clear(); state.controlActive = false;
-  send("pet:motion", { x: 0, y: 0, gait: "idle" });
+  sendPetMotion({ x: 0, y: 0, gait: "idle" });
 }
 function endPetDrag() {
   if (!dragSession) return;
@@ -82,9 +96,35 @@ function normalFrame() {
 function petFrame() {
   const frame = normalFrame();
   if (!state.chatOpen) return frame;
-  const b = currentDisplay().workArea;
-  return { x: Math.round(clamp(position.x - (CHAT_SIZE.width - PET_SIZE) / 2, b.x, b.x + b.width - CHAT_SIZE.width)),
-    y: Math.round(clamp(position.y - (CHAT_SIZE.height - PET_SIZE), b.y, b.y + b.height - CHAT_SIZE.height)), ...CHAT_SIZE };
+  const chat=chatFrame(position,currentDisplay().workArea);
+  // Keep the physics anchor at the rendered pet after screen-edge clamping.
+  position={x:chat.x+CHAT_OFFSET.x,y:chat.y+CHAT_OFFSET.y};
+  return {...chat,x:Math.round(chat.x),y:Math.round(chat.y)};
+}
+function ignorePetMouse(ignore) {
+  if(ignoringMouse===ignore)return;
+  petWindow.setIgnoreMouseEvents(ignore,{forward:true});ignoringMouse=ignore;
+}
+function cancelHide() {
+  if(!hideAnimation)return;
+  clearTimeout(hideAnimation.timer);
+  if(!hideAnimation.win.isDestroyed())hideAnimation.win.webContents.send("pet:hide-cancel");
+  hideAnimation=undefined;
+}
+function finishHide(id) {
+  if(hideAnimation?.id!==id)return;
+  const {win}=hideAnimation;
+  clearTimeout(hideAnimation.timer);hideAnimation=undefined;
+  if(state.manualHidden) { if(!win.isDestroyed())win.hide();syncPet(); }
+}
+function animateHide(win) {
+  cancelHide();
+  const id=++hideSerial;
+  hideAnimation={id,win,timer:setTimeout(()=>finishHide(id),460)};
+  win.setIgnoreMouseEvents(true,{forward:true});
+  if(win===petWindow)ignoringMouse=true;
+  win.blur();
+  win.webContents.send("pet:hide",{id,reducedMotion:systemPreferences.getAnimationSettings().prefersReducedMotion});
 }
 function raiseWindow(win) {
   win.setAlwaysOnTop(true, "screen-saver");
@@ -94,16 +134,19 @@ function raiseWindow(win) {
 // One authority for native visibility, frame, focusability and renderer state.
 function syncPet({ focus = false } = {}) {
   if (!petReady || !petWindow || petWindow.isDestroyed()) return;
+  if(state.manualHidden&&hideAnimation)return;
+  if(!state.manualHidden)cancelHide();
   raiseWindow(petWindow);
   const focusable = state.chatOpen || state.mode === MODES.PET;
   petWindow.setFocusable(focusable);
   petWindow.setBounds(petFrame(), false);
   nativePosition=undefined;
   petWindow.setOpacity(1);
-  petWindow.setIgnoreMouseEvents(state.mode === MODES.DODGE && !state.chatOpen, { forward: true });
+  ignorePetMouse(state.mode === MODES.DODGE && (!state.chatOpen || !cursorInSpeech(screen.getCursorScreenPoint(),petWindow.getBounds())));
   const visible = petShouldShow(state);
   send("pet:state", { ...state, visible });
   if (visible) {
+    send("pet:hide-cancel");
     if (petWindow.isMinimized()) petWindow.restore();
     petWindow.showInactive();
     if (focus && focusable) {
@@ -138,7 +181,7 @@ export function toggleHidden() {
   if (!state.manualHidden) {
     position = fitPet(position, cursorDisplay().workArea, PET_SIZE);
     recoverWindows({ focus: true });
-  } else { syncPet(); gameWindow?.hide(); }
+  } else animateHide(target);
   rebuildTrayMenu();
 }
 function closeGame() {
@@ -169,6 +212,7 @@ function createGameWindow() {
 export function setMode(nextMode) {
   nextMode = normalizeMode(nextMode);
   if (!Object.values(MODES).includes(nextMode)) return;
+  cancelHide();
   const previousMode=state.mode;
   const smooth=previousMode!==nextMode&&[previousMode,nextMode].every(mode=>mode===MODES.PET||mode===MODES.DODGE)
     &&!state.manualHidden&&!state.chatOpen&&petWindow?.isVisible();
@@ -210,6 +254,8 @@ export function recoverWindows({ focus = false } = {}) {
     if (!gameWindow || gameWindow.isDestroyed()) createGameWindow();
     else {
       raiseWindow(gameWindow); gameWindow.setBounds(cursorDisplay().bounds); gameWindow.showInactive();
+      gameWindow.setIgnoreMouseEvents(false);
+      gameWindow.webContents.send("pet:hide-cancel");
       if (focus) { app.focus({ steal: true }); gameWindow.show(); gameWindow.focus(); }
     }
   }
@@ -218,9 +264,17 @@ function tick() {
   const now = performance.now(), elapsed = (now-lastTick)/1000, dt = Math.min(.06,elapsed);
   if(elapsed<.004)return; // Bound IPC bursts without imposing a 60Hz ceiling.
   lastTick = now;
-  if (!petReady || menuOpen || dragSession || state.manualHidden || state.mode === MODES.PACMAN) { dodge.reset(); return; }
-  if (state.chatOpen) { dodge.reset(); return; }
+  if (!petReady || dragSession || state.manualHidden || state.mode === MODES.PACMAN) { dodge.reset(); return; }
   const cursor = screen.getCursorScreenPoint();
+  if (menuOpen) { dodge.reset();sendPetMotion({x:0,y:0,gait:"idle"},cursor);return; }
+  if(state.chatOpen) {
+    const overSpeech=cursorInSpeech(cursor,petWindow.getBounds());
+    ignorePetMouse(state.mode===MODES.DODGE&&!overSpeech);
+    if(state.mode!==MODES.DODGE||overSpeech) {
+      dodge.reset();velocity={x:0,y:0};dodgeMotion=undefined;
+      sendPetMotion({x:0,y:0,gait:"idle"},cursor);return;
+    }
+  }
   const bounds=currentDisplay().workArea;
   const reduced=reducedMotion;
   if(reduced&&modeTransition)cancelModeTransition();
@@ -230,8 +284,9 @@ function tick() {
     arrivedPosition=motion.position;velocity=motion.velocity;
     if(motion.done)modeTransition=undefined;
   } else if (state.mode === MODES.DODGE) {
-    dodgeMotion=dodge.step({petCenter:{x:position.x+PET_SIZE/2,y:position.y+PET_SIZE/2},cursor,dt:elapsed,bounds,
-      reducedMotion:reduced});
+    dodgeMotion=dodge.step({petCenter:{x:position.x+PET_SIZE/2,y:position.y+(state.chatOpen?83:PET_SIZE/2)},cursor,dt:elapsed,
+      bounds:state.chatOpen?chatMotionBounds(bounds):bounds,
+      reducedMotion:reduced,allowWander:!state.chatOpen});
     velocity=modeTransition?launchVelocity(velocity,dodgeMotion.velocity,dt):dodgeMotion.velocity;
     if(modeTransition) {modeTransition.remaining-=dt;if(modeTransition.remaining<=0)modeTransition=undefined;}
   } else { dodge.reset(); dodgeMotion=undefined; velocity = state.controlActive ? controlVelocity(keys) : { x: 0, y: 0 }; }
@@ -239,7 +294,7 @@ function tick() {
   if(state.mode===MODES.PET&&!modeTransition)petHome={...position};
   movePetWindow();
   const moving = Math.hypot(velocity.x, velocity.y) > 0;
-  send("pet:motion", { ...velocity, gait: moving ? (state.mode === MODES.PET ? "run" : dodgeMotion.gait) : "idle" });
+  sendPetMotion({ ...velocity, gait: moving ? (state.mode === MODES.PET ? "run" : dodgeMotion.gait) : "idle" },cursor);
   if (state.mode === MODES.PET && !moving && now-lastProximity>=50) {
     lastProximity=now;
     const x = cursor.x - position.x - PET_SIZE / 2;
@@ -260,6 +315,7 @@ function controlInput(event, input) {
 function createPetWindow() {
   petReady = false;
   nativePosition=undefined;
+  ignoringMouse=undefined;
   const win = new BrowserWindow({ ...normalFrame(), frame: false, transparent: true, resizable: false,
     alwaysOnTop: true, skipTaskbar: true, show: false, focusable: false, acceptFirstMouse: true, hasShadow: false, webPreferences });
   petWindow = win; raiseWindow(win);
@@ -290,14 +346,14 @@ function rebuildTrayMenu() {
     { type: "separator" },
     { label: "登录时自动启动", type: "checkbox", checked: app.getLoginItemSettings().openAtLogin, enabled: app.isPackaged,
       click: item => app.setLoginItemSettings({ openAtLogin: item.checked }) },
-    { label: "退出 Blue One-Eye Pet", role: "quit" },
+    { id: "quit", label: "退出呼噜呼噜", click: () => app.quit() },
   ]);
   trayMenu.on("menu-will-show", () => { menuOpen = true; dodge.reset(); endPetDrag(); stopControl(); });
   trayMenu.on("menu-will-close", () => {
     menuOpen = false;
   });
   tray.setContextMenu(trayMenu);
-  tray.setToolTip("Blue One-Eye Pet · " + state.mode);
+  tray.setToolTip("呼噜呼噜 · " + state.mode);
   // No tray click callback: opening the menu never reveals or activates the pet.
 }
 function registerShortcut(accelerator, handler, label) {
@@ -305,7 +361,7 @@ function registerShortcut(accelerator, handler, label) {
   try { registered = globalShortcut.register(accelerator, handler); } catch { /* invalid custom accelerator */ }
   if (!registered) {
     console.error(label + "快捷键注册失败：" + accelerator);
-    if (Notification.isSupported()) new Notification({ title: "Blue One-Eye Pet 快捷键不可用", body: label + "快捷键无效或已被占用，请使用菜单或修改环境变量。" }).show();
+    if (Notification.isSupported()) new Notification({ title: "呼噜呼噜快捷键不可用", body: label + "快捷键无效或已被占用，请使用菜单或修改环境变量。" }).show();
   }
 }
 const mascotSource = readFileSync(path.join(dirname, "../assets/blue-one-eye-mascot.svg"), "utf8");
@@ -320,6 +376,10 @@ ipcMain.handle("chat:send", (event, prompt) => { if (!fromPet(event)) throw new 
 ipcMain.on("chat:dismiss", event => { if (fromPet(event)) restorePetFrame(); });
 ipcMain.on("pet:focus", event => { if (fromPet(event) && state.mode === MODES.PET && !state.chatOpen && !state.manualHidden) syncPet({ focus: true }); });
 ipcMain.on("pet:drag", handlePetDrag);
+ipcMain.on("pet:hide-done",(event,id)=>{
+  if(hideAnimation && event.sender===hideAnimation.win.webContents
+    && event.senderFrame===event.sender.mainFrame && Number.isSafeInteger(id))finishHide(id);
+});
 ipcMain.on("game:exit", event => { if (event.sender === gameWindow?.webContents) setMode(MODES.PET); });
 
 const hasLock = app.requestSingleInstanceLock();
@@ -335,8 +395,8 @@ export const ready = app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   pinPet(); createPetWindow();
   const trayImage = nativeImage.createFromPath(path.join(dirname, "../assets/tray.png"));
-  // The requested fixed white silhouette must not be recolored by macOS.
-  trayImage.setTemplateImage(false);
+  // macOS owns the tint, including light/dark menu bars and selected menus.
+  trayImage.setTemplateImage(true);
   tray = new Tray(trayImage);
   if (trayImage.isEmpty() && process.platform === "darwin") tray.setTitle("宠");
   rebuildTrayMenu();
@@ -355,13 +415,13 @@ export const ready = app.whenReady().then(() => {
   for (const event of ["resume", "unlock-screen"]) powerMonitor.on(event, () => { recoverWindows(); });
   app.on("activate", () => { if (!dragSession) syncPet(); });
 });
-function prepareQuit() { quitting = true; clearInterval(loop); }
+function prepareQuit() { quitting = true; clearInterval(loop); cancelHide(); }
 app.on("before-quit", prepareQuit);
 app.on("will-quit", () => globalShortcut.unregisterAll());
 app.on("window-all-closed", () => {});
 
 // Test code runs in the main process; this API is not exposed to renderers or a port.
-export function getRuntime() { return { state: { ...state }, position: { ...position }, velocity:{...velocity}, modeTransition, petHome, petWindow, gameWindow, tray, trayMenu, menuOpen, dragPending: Boolean(dragSession), dodgeMotion }; }
+export function getRuntime() { return { state: { ...state }, position: { ...position }, velocity:{...velocity}, modeTransition, petHome, petWindow, gameWindow, tray, trayMenu, menuOpen, ignoringMouse, hiding:Boolean(hideAnimation), dragPending: Boolean(dragSession), dodgeMotion }; }
 export function shutdown(code = 0) { prepareQuit(); globalShortcut.unregisterAll(); app.exit(code); }
 process.once("SIGTERM", () => shutdown());
 process.once("SIGINT", () => shutdown());

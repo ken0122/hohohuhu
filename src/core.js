@@ -5,6 +5,28 @@ export const MODES = Object.freeze({
 });
 export const PET_FRAME_SIZE = 132;
 export const PET_SPRITE_SIZE = 84;
+export const CHAT_SIZE = Object.freeze({ width: 272, height: 242 });
+export const CHAT_OFFSET = Object.freeze({
+  x: (CHAT_SIZE.width - PET_FRAME_SIZE) / 2,
+  y: CHAT_SIZE.height - PET_FRAME_SIZE,
+});
+export const SPEECH_RECT = Object.freeze({ x: 12, y: 10, width: 248, height: 140 });
+export function chatMotionBounds(bounds) {
+  return {x:bounds.x+CHAT_OFFSET.x,y:bounds.y+CHAT_OFFSET.y,
+    width:bounds.width-CHAT_OFFSET.x*2,height:bounds.height-CHAT_OFFSET.y};
+}
+export function chatFrame(position, bounds) {
+  return {
+    x:clamp(position.x-CHAT_OFFSET.x,bounds.x,bounds.x+bounds.width-CHAT_SIZE.width),
+    y:clamp(position.y-CHAT_OFFSET.y,bounds.y,bounds.y+bounds.height-CHAT_SIZE.height),
+    ...CHAT_SIZE,
+  };
+}
+export function cursorInSpeech(cursor, frame) {
+  const x=cursor.x-frame.x, y=cursor.y-frame.y;
+  return x>=SPEECH_RECT.x && x<=SPEECH_RECT.x+SPEECH_RECT.width
+    && y>=SPEECH_RECT.y && y<=SPEECH_RECT.y+SPEECH_RECT.height;
+}
 export function normalizeMode(mode) { return mode === "control" ? MODES.PET : mode; }
 export function nextMode(mode) {
   const order=[MODES.DODGE,MODES.PET,MODES.PACMAN];

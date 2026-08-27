@@ -1,0 +1,3 @@
+.hide-particles { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 100; pointer-events: none; }
+body.is-dissolving { background: transparent; pointer-events: none; }
+body.is-dissolving > :not(.hide-particles) { visibility: hidden; }

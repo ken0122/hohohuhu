@@ -13,4 +13,7 @@ contextBridge.exposeInMainWorld("bluepet", {
   onState: (callback) => ipcRenderer.on("pet:state", (_event, state) => callback(state)),
   onPetMotion: (callback) => ipcRenderer.on("pet:motion", (_event, state) => callback(state)),
   onPetProximity: (callback) => ipcRenderer.on("pet:proximity", (_event, near) => callback(near)),
+  onHide: (callback) => ipcRenderer.on("pet:hide", (_event, request) => callback(request)),
+  onHideCancel: (callback) => ipcRenderer.on("pet:hide-cancel", () => callback()),
+  hideDone: (id) => ipcRenderer.send("pet:hide-done", id),
 });

@@ -67,3 +67,18 @@ test("dodge accelerates away from a nearby cursor", () => {
   });
   assert.ok(next.x < 0);
 });
+
+test("chat frame clamps the whole surface on offset displays and hit-tests only speech",async()=>{
+  const {chatFrame,chatMotionBounds,CHAT_OFFSET,cursorInSpeech}=await import('../src/core.js');
+  const bounds={x:-1600,y:-300,width:1600,height:900};
+  const frame=chatFrame({x:-10,y:-290},bounds);
+  assert.deepEqual(frame,{x:-272,y:-300,width:272,height:242});
+  assert.equal(cursorInSpeech({x:frame.x+30,y:frame.y+140},frame),true);
+  assert.equal(cursorInSpeech({x:frame.x+136,y:frame.y+193},frame),false);
+  for(const point of [{x:-1700,y:-400},{x:100,y:800},{x:-800,y:200}]) {
+    const clamped=fitPet(point,chatMotionBounds(bounds));
+    const native=chatFrame(clamped,bounds);
+    assert.equal(native.x+CHAT_OFFSET.x,clamped.x);
+    assert.equal(native.y+CHAT_OFFSET.y,clamped.y);
+  }
+});

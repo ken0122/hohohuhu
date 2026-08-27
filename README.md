@@ -1,21 +1,23 @@
-# Blue One-Eye Pet
+# 呼噜呼噜
 
 一只会主动让路的蓝色单眼桌面宠物。忙的时候陪你工作，闲的时候摸摸头、聊一句，或者吃一屏豆豆。
 
 ![蓝色单眼宠物](assets/blue-one-eye-mascot.svg)
 
-当前版本 **0.4.1** · **macOS** · **MIT** · Electron + 原生 JavaScript
+显示名称为「呼噜呼噜」；npm 包名 `blue-one-eye-pet`、命令 `bluepet` 与应用标识保持兼容。
+
+当前版本 **0.4.2** · **macOS** · **MIT** · Electron + 原生 JavaScript
 
 ## 安装与启动
 
 ### macOS 应用
 
-使用本地打包产物，或仓库 [Releases](https://github.com/ken0122/hohohuhu/releases) 中实际已发布的附件；此链接不表示当前版本已经发布。
+使用本地打包产物，或仓库 [Releases](https://github.com/ken0122/huluhulu/releases) 中实际已发布的附件；此链接不表示当前版本已经发布。
 
 1. Apple Silicon（M 系列）选择 `mac-arm64` 包；Intel 需要单独构建的 `mac-x64` 包，不能混用。
-2. 打开 DMG，将 **Blue One-Eye Pet.app** 拖入「应用程序」；也可解压 ZIP 后移动进去。
-3. 启动后看屏幕顶部菜单栏的白色宠物轮廓图标，Dock 不显示图标。
-4. 可在菜单中开启「登录时自动启动」。退出请使用「退出 Blue One-Eye Pet」，隐藏不会退出后台。
+2. 打开 DMG，将 **呼噜呼噜.app** 拖入「应用程序」；也可解压 ZIP 后移动进去。
+3. 启动后看屏幕顶部菜单栏的单眼宠物细轮廓图标，Dock 不显示图标。
+4. 可在菜单中开启「登录时自动启动」。退出请使用「退出呼噜呼噜」，隐藏不会退出后台。
 
 应用包自带 Electron，不需要安装 Node.js。当前本地 release 包没有 Developer ID 签名、未经 Apple 公证，macOS 可能阻止首次打开；只运行你确认来源和校验值可信的包，不要关闭系统安全保护。
 
@@ -24,7 +26,7 @@
 需要 **Node.js 22.12+**、npm，以及首次安装时下载 Electron 的网络连接。下载 `.tgz` 后，在其所在目录执行：
 
 ```bash
-npm install -g ./blue-one-eye-pet-0.4.1.tgz
+npm install -g ./blue-one-eye-pet-0.4.2.tgz
 bluepet
 ```
 
@@ -42,8 +44,8 @@ bluepet --foreground    # 前台运行，方便查看错误
 ### 从源码安装
 
 ```bash
-git clone https://github.com/ken0122/hohohuhu.git
-cd hohohuhu
+git clone https://github.com/ken0122/huluhulu.git
+cd huluhulu
 npm ci
 npm link
 bluepet
@@ -55,7 +57,7 @@ bluepet
 
 | 模式 | 行为 | 操作 |
 | --- | --- | --- |
-| Dodge · 自由让路 | 自主散步、点击穿透；光标慢慢靠近就让路，快速逼近会弹开再减速，不自动消失 | 正常使用桌面即可 |
+| Dodge · 自由让路 | 自主散步、点击穿透，黑色眼珠始终看向光标；光标慢慢靠近就让路，快速逼近会弹开再减速，不自动消失 | 正常使用桌面即可 |
 | Pet · 互动与移动 | 留在身边，可以拖动、亲昵互动；安静 12–22 秒后偶尔张望或伸展 | 鼠标互动；选 Pet 或点击后用方向键移动，松键停止；Esc 释放键盘焦点 |
 | Pac-Man · 吃颗豆豆 | 当前屏幕出现遮罩和随机豆豆，每清完一屏，速度再乘 **1.3** | 方向键移动，Esc 退出并回到 Pet |
 
@@ -85,7 +87,7 @@ Pac-Man 初始速度 280 px/s，之后为 364、473.2……，不是每屏固定
 
 | 操作 | 默认快捷键 |
 | --- | --- |
-| 立即隐藏 / 恢复 | **⌃⌥B** |
+| 粒子消散隐藏 / 恢复 | **⌃⌥B** |
 | 呼出头顶聊天气泡 | **⌃⌥Space** |
 | Dodge → Pet → Pac-Man → Dodge 循环切换 | **⌃⌥⌘M** |
 
@@ -102,7 +104,11 @@ bluepet
 
 这些环境变量作用于本次启动；给已运行实例再次传入环境变量不会重新注册快捷键。
 
+隐藏时先轻轻鼓起、再散成蓝色粒子，动画约 420ms；主进程以 460ms 兜底隐藏窗口。开始隐藏即释放鼠标交互，期间再次恢复或选模式会取消消散；系统开启「减少动态效果」时直接隐藏。Pet、Dodge、聊天和 Pac-Man 均支持。
+
 ## 聊天与隐私
+
+从 Dodge 打开聊天时停止自主散步，仍响应光标靠近与快速逼近的闪避；光标进入气泡时停稳，方便输入。气泡外的透明区域与角色继续点击穿透，Pet 聊天保持静止。气泡为 248×140px，采用无尾尖的柔软圆角、单眼状态标记和圆形发送按钮，输入区不叠加装饰层。
 
 当前固定使用 **`deepseek-v4-flash`**，关闭思考（`thinking.type=disabled`），effort 参数为最低 `low`。直接从主进程请求 DeepSeek 的 Anthropic 兼容接口，不为每次聊天启动 Claude Code CLI，也不会跟随本地配置中的其他模型名。
 
@@ -118,7 +124,7 @@ bluepet
 
 ## 常见问题
 
-- **没看到 Dock 图标？** 这是菜单栏常驻应用，Dock 图标默认隐藏。菜单栏图标是无底板的固定白色轮廓，浅色背景上可能不明显。
+- **没看到 Dock 图标？** 这是菜单栏常驻应用，Dock 图标默认隐藏。菜单栏图标是无底板的模板轮廓，由 macOS 随菜单栏明暗自动着色，与系统图标保持一致。
 - **找不到宠物？** 先按 `⌃⌥B`，或从菜单选择「找回宠物到当前屏幕」。换显示器、休眠恢复有自动恢复处理；手动隐藏除外。
 - **Pet 方向键没反应？** 先切到 Pet 或点击它获取焦点；Esc 和切到别的应用会释放控制。
 - **聊天报 provider 错误？** 确认上述来源中有有效的官方 DeepSeek 配置；当前版本不支持任意 Claude provider。不要把密钥粘贴到 issue 或日志中。
@@ -159,13 +165,13 @@ npm run release:mac
 
 命令先检查 `package.json` 与 `package-lock.json` 的版本一致性、差异格式并运行单测，再生成**当前 Node 运行架构**的产物；README 版本号仍需人工同步核对。Apple Silicon 请使用 arm64 Node；Intel 使用 x64 Node。已有本机交付验证范围为 arm64，具体以对应产物的 `RELEASE.md` 和验收记录为准。
 
-每次创建独立的 `outputs/releases/v0.4.1-mac-<arch>-<随机后缀>/`，不覆盖旧包：
+每次创建独立的 `outputs/releases/v0.4.2-mac-<arch>-<随机后缀>/`，不覆盖旧包：
 
 | 文件 | 用途 |
 | --- | --- |
-| `Blue-One-Eye-Pet-0.4.1-mac-<arch>-unsigned.dmg` | 拖入 Applications 安装 |
-| `Blue-One-Eye-Pet-0.4.1-mac-<arch>-unsigned.zip` | 解压即得应用 |
-| `blue-one-eye-pet-0.4.1.tgz` | npm 命令行安装 |
+| `呼噜呼噜-0.4.2-mac-<arch>-unsigned.dmg` | 拖入 Applications 安装 |
+| `呼噜呼噜-0.4.2-mac-<arch>-unsigned.zip` | 解压即得应用 |
+| `blue-one-eye-pet-0.4.2.tgz` | npm 命令行安装 |
 | `SHA256SUMS` | 三个安装包的 SHA-256 校验值 |
 | `RELEASE.md` | 基础提交、未提交状态、构建范围与安装说明 |
 | `README.md` / `AGENTS.md` / `LICENSE` | 使用手册、协作指南与 MIT 协议副本 |

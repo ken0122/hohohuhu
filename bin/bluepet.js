@@ -19,5 +19,5 @@ const child = spawn(electronPath, [packageRoot, ...appArgs], {
 
 if (!foreground) {
   child.unref();
-  console.log("Blue One-Eye Pet 已在后台启动。");
+  console.log("呼噜呼噜 已在后台启动。");
 }

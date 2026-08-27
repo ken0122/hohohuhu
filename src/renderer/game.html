@@ -9,11 +9,12 @@ FORM: 屏幕遮罩小游戏，方向键是唯一持续操作；固定 staging，
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Blue One-Eye Pac-Man</title>
+    <title>呼噜呼噜 · 吃颗豆豆</title>
     <link rel="stylesheet" href="game.css" />
     <link rel="stylesheet" href="mascot.css" />
+    <link rel="stylesheet" href="hide-effect.css" />
   </head>
   <body>
     <canvas id="game" aria-label="用方向键操控蓝色单眼宠物吃豆豆"></canvas>

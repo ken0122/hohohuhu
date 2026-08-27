@@ -1,9 +1,12 @@
 import { createMascot } from "./mascot.js";
 import { createGame, updateGame, GAME_HUD_HEIGHT } from "./game-state.js";
+import { installHideEffect } from "./hide-effect.js";
 const canvas = document.querySelector("#game");
 const context = canvas.getContext("2d");
 const spriteHost = document.querySelector("#game-pet");
 const sprite = await createMascot(spriteHost, { eyelids: false });
+const hideEffect=await installHideEffect(spriteHost,()=>sprite.setActive(false));
+window.bluepet.onHideCancel(()=>sprite.setActive(true));
 const scoreElement = document.querySelector("#score");
 const levelMessage = document.querySelector("#level-message");
 const exitButton = document.querySelector("#exit");
@@ -34,6 +37,7 @@ function showLevelMessage(text) {
 }
 
 function handleKey(event) {
+  if(hideEffect.active)return;
   const directions = {
     ArrowLeft: [-1, 0],
     ArrowRight: [1, 0],
@@ -77,8 +81,7 @@ function draw(time) {
 function frame(time) {
   const dt = Math.min(.05, (time - previousTime) / 1000);
   previousTime = time;
-  if (!document.hidden) update(dt);
-  draw(time);
+  if (!document.hidden&&!hideEffect.active) { update(dt);draw(time); }
   requestAnimationFrame(frame);
 }
 

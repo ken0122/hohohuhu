@@ -2,6 +2,7 @@ import { createMascot } from "./mascot.js";
 import { idleDelay } from "./eye-motion.js";
 import { REACTIONS, clickReaction, createStrokeGesture } from "./pet-interactions.js";
 import { createPetDrag } from "./pet-drag.js";
+import { installHideEffect } from "./hide-effect.js";
 const body = document.body;
 const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message");
@@ -21,6 +22,9 @@ let visible = false, hovering = false, idleTimer, idleFinish, idleCount = 0;
 let lastReactionKind;
 let dragging = false;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+const hideEffect=await installHideEffect(pet,()=>{
+  visible=false;drag.cancel();resetReaction();character.setActive(false);
+});
 const drag = createPetDrag(pet, {
   enabled: () => mode === "pet" && visible && !chatOpen,
   onPress() { moving = false; body.classList.remove("is-moving"); stopIdle(); character.reset(); },
@@ -128,7 +132,7 @@ window.bluepet.ready();
 // The visible renderer supplies the display-synchronised clock, instead of
 // moving the native window on an unrelated 32ms main-process interval.
 function desktopFrame() {
-  if(visible&&!chatOpen&&!document.hidden&&!drag.pressed)window.bluepet.frame();
+  if(visible&&!hideEffect.active&&!document.hidden&&!drag.pressed)window.bluepet.frame();
   requestAnimationFrame(desktopFrame);
 }
 requestAnimationFrame(desktopFrame);

@@ -10,6 +10,8 @@
   transition: transform 100ms ease-out;
 }
 body[data-reaction="idle-look"] .mascot-svg .pupil { transition-duration: 450ms; }
+/* A cursor target changes every frame; tweening it repeatedly leaves the eye lagging. */
+.mascot-svg[data-cursor-gaze="true"] .pupil { transition: none; }
 /* Walking/running affects only the single original body path, never layers. */
 .mascot-svg[data-gait="walk"] .mascot,
 .mascot-svg[data-gait="run"] .mascot { animation: none; }

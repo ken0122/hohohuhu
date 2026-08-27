@@ -32,7 +32,7 @@ export function createDodgeMotion() {
   let previous, impulse={x:0,y:0}, cooldown=0, wander={x:48,y:25};
   return {
     reset() { previous=undefined; impulse={x:0,y:0}; cooldown=0; },
-    step({cursor,petCenter,dt,bounds,random=Math.random,reducedMotion=false}) {
+    step({cursor,petCenter,dt,bounds,random=Math.random,reducedMotion=false,allowWander=true}) {
       if (dt>.15 || dt<=0 || reducedMotion) { previous=undefined; impulse={x:0,y:0}; cooldown=0; }
       const elapsed=clamp(dt,0,.06);
       const approach=cursorApproach(previous,cursor,petCenter,dt);
@@ -56,11 +56,22 @@ export function createDodgeMotion() {
         const direction=escapeDirection(impulse,petCenter,bounds);
         impulse={x:direction.x*power,y:direction.y*power};
       } else impulse={x:0,y:0};
-      wander=nextDodgeVelocity({petCenter,cursor,velocity:wander,dt:elapsed,bounds,random});
-      let x=wander.x+impulse.x,y=wander.y+impulse.y;
+      let base;
+      if (allowWander) {
+        wander=nextDodgeVelocity({petCenter,cursor,velocity:wander,dt:elapsed,bounds,random});
+        base=wander;
+      } else {
+        // Chat never invents motion: only proximity and the decaying reflex move it.
+        const away={x:petCenter.x-cursor.x,y:petCenter.y-cursor.y};
+        const distance=Math.hypot(away.x,away.y);
+        const speed=Math.max(0,170-distance)*2;
+        const direction=escapeDirection(away,petCenter,bounds);
+        base={x:direction.x*speed,y:direction.y*speed};
+      }
+      let x=base.x+impulse.x,y=base.y+impulse.y;
       const speed=Math.hypot(x,y);
       if (speed>1200) { x=x/speed*1200; y=y/speed*1200; }
-      return { velocity:{x,y}, gait:power>80?"run":"walk", reflex:power>80, triggered, approachSpeed:approach.speed };
+      return { velocity:{x,y}, gait:speed<.01?"idle":power>80?"run":"walk", reflex:power>80, triggered, approachSpeed:approach.speed };
     },
   };
 }

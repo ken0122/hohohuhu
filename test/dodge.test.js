@@ -67,3 +67,17 @@ test("pause resets, stale samples, cursor teleports and reduced-motion mode supp
   assert.equal(sample(stale,{x:660,y:400},{dt:1}).triggered,false);
   assert.equal(cursorApproach({x:2000,y:400},{x:660,y:400},center,.032).speed,0);
 });
+
+test("chat disables wandering, retains slow avoidance and fast reflex, then settles",()=>{
+  const motion=createDodgeMotion(),options={allowWander:false};
+  for(let i=0;i<60;i++) {
+    const resting=sample(motion,{x:1000,y:400},options);
+    assert.deepEqual(resting.velocity,{x:0,y:0});assert.equal(resting.gait,"idle");
+  }
+  const slow=sample(motion,{x:690,y:400},{...options,reducedMotion:true});
+  assert.ok(slow.velocity.x<0);assert.equal(slow.reflex,false);
+  motion.reset();sample(motion,{x:820,y:400},options);
+  assert.equal(sample(motion,{x:680,y:400},options).reflex,true);
+  for(let i=0;i<60;i++)sample(motion,{x:1000,y:400},options);
+  assert.deepEqual(sample(motion,{x:1000,y:400},options).velocity,{x:0,y:0});
+});
