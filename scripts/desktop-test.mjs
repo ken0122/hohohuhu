@@ -4,7 +4,7 @@ import path from "node:path";
 import { app, globalShortcut, nativeImage, screen, powerMonitor, systemPreferences } from "electron";
 
 // Do not await app readiness at module top level: Electron awaits ESM evaluation.
-// Real Electron windows, isolated app data, no network/provider calls.
+// Real Electron windows, isolated app data. Live chat is explicitly opt-in.
 await mkdir(path.resolve("work"), { recursive: true });
 app.setPath("userData", await mkdtemp(path.resolve("work/desktop-test-")));
 const runtime = await import("../src/main.js");
@@ -44,6 +44,34 @@ try {
     assert.deepEqual(structure,baseline);
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.pet')).width"),"84px");
     await writeFile(path.resolve("work/original-idle.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
+  });
+  await check("Mode inertia: smooth launch, momentum on return/reversal, settling and chat cancellation",async()=>{
+    setMode("pet");await until(()=>!getRuntime().modeTransition,7000);
+    const realCursor=screen.getCursorScreenPoint,realAnimations=systemPreferences.getAnimationSettings;
+    const area=screen.getDisplayMatching(getRuntime().petWindow.getBounds()).workArea;
+    screen.getCursorScreenPoint=()=>({x:area.x+30,y:area.y+30});
+    systemPreferences.getAnimationSettings=()=>({...realAnimations.call(systemPreferences),prefersReducedMotion:false});
+    try {
+      const home=getRuntime().position;
+      setMode("dodge");assert.deepEqual(getRuntime().position,home);
+      assert.deepEqual(getRuntime().velocity,{x:0,y:0});
+      await delay(45);assert.ok(Math.hypot(...Object.values(getRuntime().velocity))<30);
+      await delay(1500);
+      const before=getRuntime().position,momentum=getRuntime().velocity;
+      assert.ok(Math.hypot(before.x-home.x,before.y-home.y)>15);
+      setMode("pet");assert.deepEqual(getRuntime().position,before);assert.deepEqual(getRuntime().velocity,momentum);
+      await delay(100);
+      const turning=getRuntime().position,turnVelocity=getRuntime().velocity;
+      setMode("dodge");assert.deepEqual(getRuntime().position,turning);assert.deepEqual(getRuntime().velocity,turnVelocity);
+      await delay(120);setMode("pet");
+      await until(()=>!getRuntime().modeTransition,7000);
+      assert.ok(Math.hypot(getRuntime().position.x-home.x,getRuntime().position.y-home.y)<1);
+      assert.deepEqual(getRuntime().velocity,{x:0,y:0});await visiblePixels();
+      setMode("dodge");await delay(500);setMode("pet");showChat();
+      const paused=getRuntime().position;await delay(150);
+      assert.equal(getRuntime().modeTransition,undefined);assert.deepEqual(getRuntime().position,paused);
+      restorePetFrame();
+    } finally {screen.getCursorScreenPoint=realCursor;systemPreferences.getAnimationSettings=realAnimations;}
   });
   await check("eye stays open by default under CSP, with only brief natural blinks",async()=>{
     const eyeY=()=>evaluate("new DOMMatrix(getComputedStyle(document.querySelector('.lid')).transform).m42");
@@ -313,7 +341,7 @@ try {
     for(const request of [{phase:"start",point:origin},{phase:"move",point:target},{phase:"end"}]) {
       await evaluate("window.bluepet.dragPet("+JSON.stringify(request)+")");await delay(50);
     }
-    setMode("dodge");
+    setMode("dodge");await until(()=>!getRuntime().modeTransition);
     const realCursor=screen.getCursorScreenPoint,realAnimations=systemPreferences.getAnimationSettings;
     const center={x:getRuntime().position.x+66,y:getRuntime().position.y+66};
     let cursor={x:center.x+230,y:center.y},samples=0;
@@ -402,12 +430,20 @@ try {
     await js("import('./game.js').then(({game})=>{Object.assign(game.pet,{x:200,y:200,vx:0,vy:0});game.pellets=[{x:260,y:200,radius:5,glow:0},{x:340,y:200,radius:5,glow:0}];})");
     win.webContents.sendInputEvent({type:"keyDown",keyCode:"RIGHT"});
     await until(()=>js("document.querySelector('#round').textContent==='2'"));
-    assert.deepEqual(await js("import('./game.js').then(({game})=>[game.pet.speed,game.pet.vx,game.pet.vy])"),[300,300,0]);
-    assert.equal(await js("document.querySelector('#speed').textContent"),"1.07×");
+    assert.deepEqual(await js("import('./game.js').then(({game})=>[game.pet.speed,game.pet.vx,game.pet.vy])"),[308,308,0]);
+    assert.equal(await js("document.querySelector('#speed').textContent"),"1.10×");
     await js("import('./game.js').then(({game})=>{Object.assign(game.pet,{x:200,y:200,vx:0,vy:0});game.pellets=[{x:260,y:200,radius:5,glow:0},{x:340,y:200,radius:5,glow:0}];})");
     win.webContents.sendInputEvent({type:"keyDown",keyCode:"RIGHT"});
     await until(()=>js("document.querySelector('#round').textContent==='3'"));
-    assert.deepEqual(await js("import('./game.js').then(({game})=>[game.pet.speed,game.pet.vx])"),[320,320]);
+    assert.deepEqual(await js("import('./game.js').then(({game})=>[game.pet.speed,game.pet.vx].map(v=>Math.round(v*100)/100))"),[338.8,338.8]);
+    assert.equal(await js("document.querySelector('#speed').textContent"),"1.21×");
+    const hud=await js("document.querySelector('.hud').getBoundingClientRect().toJSON()");
+    const hint=await js("document.querySelector('#level-message').getBoundingClientRect().toJSON()");
+    assert.ok(hint.top>=hud.top&&hint.bottom<=hud.bottom,"round announcement stays within the HUD");
+    assert.ok(await js("import('./game.js').then(({game})=>game.pellets.every(p=>p.y-p.radius>96))"));
+    await js("import('./game.js').then(({game})=>{Object.assign(game.pet,{y:140,vy:-1000,vx:0});})");
+    await delay(60);
+    assert.ok((await js("document.querySelector('#game-pet').getBoundingClientRect().top"))>hud.bottom);
     await writeFile(path.resolve("work/pacman-round-3.png"),(await win.webContents.capturePage()).toPNG());
     toggleHidden();assert.equal(win.isVisible(),false);toggleHidden();assert.equal(win.isVisible(),true);
     assert.equal(await js("document.querySelectorAll('.lid').length"),0);
@@ -416,6 +452,17 @@ try {
     setMode("pacman");await until(()=>getRuntime().gameWindow?.isVisible());await delay(200);
     assert.equal(await getRuntime().gameWindow.webContents.executeJavaScript("document.querySelector('#speed').textContent"),"1.00×");
     setMode("pet");
+  });
+  if(process.env.BLUEPET_TEST_CHAT==="1") await check("Chat live: Flash reply reaches the bubble with a 50-character cap",async()=>{
+    setMode("pet");showChat();await delay(150);
+    const started=performance.now();
+    await evaluate("document.querySelector('#message').value='跟我打个招呼吧';document.querySelector('#chat-form').requestSubmit()");
+    await until(()=>evaluate("!document.body.classList.contains('is-thinking')"),18000);
+    assert.equal(await evaluate("document.querySelector('.speech__status').textContent"),"只告诉你");
+    const reply=await evaluate("document.querySelector('#reply').textContent");
+    assert.ok([...reply].length>0&&[...reply].length<=50);
+    console.log("Live bubble reply:",JSON.stringify({elapsedMs:Math.round(performance.now()-started),reply}));
+    restorePetFrame();
   });
   console.log("Desktop integration checks passed:",results.length);
   await writeFile(path.resolve("work/desktop-test-results.json"),JSON.stringify({passed:results},null,2));

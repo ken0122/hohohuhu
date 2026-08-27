@@ -18,12 +18,16 @@ FORM: 屏幕遮罩小游戏，方向键是唯一持续操作；固定 staging，
   <body>
     <canvas id="game" aria-label="用方向键操控蓝色单眼宠物吃豆豆"></canvas>
     <header class="hud">
-      <div class="score"><span>吃到</span><strong id="score">0</strong></div>
-      <div class="round-status" aria-live="polite">第 <span id="round">1</span> 盘 · <span id="speed">1.00×</span></div>
-      <p id="hint">方向键移动 · Esc 结束摸鱼</p>
-      <button id="exit" type="button">回去工作</button>
+      <div class="game-info">
+        <div class="score"><span>收集</span><strong id="score">0</strong></div>
+        <div class="round-status" aria-live="polite">第 <span id="round">1</span> 盘 · <span id="speed">1.00×</span></div>
+        <p class="level-message" id="level-message" aria-live="polite"></p>
+      </div>
+      <div class="game-controls">
+        <p id="hint"><kbd>↑ ↓ ← →</kbd> 移动</p>
+        <button id="exit" type="button"><kbd>Esc</kbd> 返回桌面</button>
+      </div>
     </header>
-    <div class="level-message" id="level-message" aria-live="polite"></div>
     <div id="game-pet" class="game-pet"></div>
     <script type="module" src="game.js"></script>
   </body>

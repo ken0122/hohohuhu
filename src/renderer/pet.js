@@ -130,14 +130,14 @@ form.addEventListener("submit", async event => {
   const message = input.value.trim();
   if (!message || pending) return;
   pending = true; body.classList.add("is-thinking");
-  status.textContent = "在认真想"; reply.textContent = "稍等，我想想怎么说…";
+  status.textContent = "听见啦"; reply.textContent = "正在悄悄回你…";
   input.disabled = true; sendButton.disabled = true;
   try {
     reply.textContent = await window.bluepet.sendChat(message);
     status.textContent = "只告诉你"; input.value = "";
   } catch {
     status.textContent = "没接住";
-    reply.textContent = "暂时没连上，请检查本机 Claude Code 后再试。";
+    reply.textContent = "暂时没连上，请检查网络和本机 DeepSeek 配置后再试。";
   } finally {
     pending = false; body.classList.remove("is-thinking");
     input.disabled = false; sendButton.disabled = false;

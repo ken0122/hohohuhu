@@ -1,15 +1,17 @@
 export const GAME_PET_SIZE = 64;
-export const speedForLevel = level => 280 + (Math.max(1, Math.floor(level)) - 1) * 20;
+export const GAME_HUD_HEIGHT = 96;
+export const speedForLevel = level => 280 * 1.1 ** (Math.max(1, Math.floor(level)) - 1);
+const topOfPlay = GAME_HUD_HEIGHT + GAME_PET_SIZE / 2 + 12;
 
 export function makePellets(level, width, height, random = Math.random) {
   return Array.from({ length: Math.min(16 + level * 4, 42) }, (_, index) => ({
-    x: 36 + random() * (width - 72), y: 100 + random() * (height - 148),
+    x: 36 + random() * (width - 72), y: topOfPlay + random() * Math.max(0,height - GAME_PET_SIZE/2 - 12 - topOfPlay),
     radius: index % 9 === 0 ? 9 : 5, glow: random() * Math.PI * 2,
   }));
 }
 export function createGame(width, height, random = Math.random) {
   return {
-    pet: { x: width / 2, y: height / 2, size: GAME_PET_SIZE, vx: 0, vy: 0, speed: speedForLevel(1) },
+    pet: { x: width / 2, y: Math.max(topOfPlay,height / 2), size: GAME_PET_SIZE, vx: 0, vy: 0, speed: speedForLevel(1) },
     pellets: makePellets(1, width, height, random), score: 0, level: 1, pulse: 0,
   };
 }
@@ -30,8 +32,8 @@ export function updateGame(game, dt, width, height, random = Math.random) {
   });
   if (pet.x < -half) pet.x = width + half;
   if (pet.x > width + half) pet.x = -half;
-  if (pet.y < 78) { pet.y = 78; pet.vy = Math.abs(pet.vy); }
-  if (pet.y > height-half) { pet.y = height-half; pet.vy = -Math.abs(pet.vy); }
+  if (pet.y < topOfPlay) { pet.y = topOfPlay; pet.vy = Math.abs(pet.vy); }
+  if (pet.y > height-half-12) { pet.y = height-half-12; pet.vy = -Math.abs(pet.vy); }
   const cleared = game.pellets.length === 0;
   if (cleared) {
     game.level++;

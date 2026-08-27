@@ -1,5 +1,5 @@
 import { createMascot } from "./mascot.js";
-import { createGame, updateGame } from "./game-state.js";
+import { createGame, updateGame, GAME_HUD_HEIGHT } from "./game-state.js";
 const canvas = document.querySelector("#game");
 const context = canvas.getContext("2d");
 const spriteHost = document.querySelector("#game-pet");
@@ -12,6 +12,7 @@ export const game = createGame(window.innerWidth, window.innerHeight);
 const pet = game.pet;
 const roundElement = document.querySelector("#round");
 const speedElement = document.querySelector("#speed");
+document.documentElement.style.setProperty("--game-hud-height",`${GAME_HUD_HEIGHT}px`);
 spriteHost.style.width = spriteHost.style.height = `${pet.size}px`;
 let previousTime = performance.now();
 
@@ -51,7 +52,7 @@ function update(dt) {
   if (updateGame(game, dt, window.innerWidth, window.innerHeight)) {
     roundElement.textContent = game.level;
     speedElement.textContent = (pet.speed / 280).toFixed(2) + "×";
-    showLevelMessage(`第 ${game.level} 盘 · 速度 ${speedElement.textContent}`);
+    showLevelMessage("下一盘 · 脚步加快 10%");
   }
   scoreElement.textContent = game.score;
 }
@@ -86,5 +87,5 @@ document.addEventListener("visibilitychange", () => document.body.classList.togg
 window.addEventListener("keydown", handleKey);
 exitButton.addEventListener("click", () => window.bluepet.exitGame());
 resize();
-showLevelMessage("方向键，开吃");
+showLevelMessage("慢慢来，沿着豆豆走。");
 requestAnimationFrame(frame);

@@ -1,60 +1,32 @@
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { cleanClaudeReply } from "./core.js";
+import { CHAT_MODEL, loadChatProvider } from "./chat-provider.js";
 const SYSTEM_PROMPT = "你是一只住在用户桌面上的蓝色单眼小宠物。性格乖巧、亲昵、略微害羞，偶尔撒娇，但不油腻、不说教。用用户的语言回答，只说一句自然短句，不使用 Markdown，最多 50 个字符。不要声称你操作了电脑，不要索取敏感信息。";
-function resolveClaudePath() {
-  const candidates = [
-    process.env.BLUEPET_CLAUDE_PATH,
-    "/opt/homebrew/bin/claude",
-    "/usr/local/bin/claude",
-    path.join(os.homedir(), ".local/bin/claude"),
-  ].filter(Boolean);
-  return candidates.find((candidate) => path.isAbsolute(candidate) && existsSync(candidate));
-}
-
-export async function askClaude(prompt) {
-  const claudePath = resolveClaudePath();
-  if (!claudePath) throw new Error("没有找到 Claude Code。请先安装 claude，或设置 BLUEPET_CLAUDE_PATH。");
-  const safePrompt = String(prompt).trim().slice(0, 500);
-  if (!safePrompt) throw new Error("悄悄说点什么吧。");
-
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      claudePath,
-      [
-        "-p",
-        "--no-session-persistence",
-        "--disable-slash-commands",
-        "--tools",
-        "",
-        "--system-prompt",
-        SYSTEM_PROMPT,
-        safePrompt,
-      ],
-      { cwd: os.tmpdir(), env: process.env, stdio: ["ignore", "pipe", "pipe"] },
-    );
-    let output = "";
-    let errorOutput = "";
-    const timeout = setTimeout(() => child.kill("SIGTERM"), 45_000);
-    child.stdout.on("data", (chunk) => {
-      if (output.length < 8_000) output += chunk.toString();
+export async function askClaude(prompt,{provider=loadChatProvider,request=fetch}={}) {
+  const safePrompt=String(prompt).trim().slice(0,500);
+  if(!safePrompt)throw new Error("悄悄说点什么吧。");
+  const {url,key}=await provider();
+  try {
+    // No CLI startup, tool discovery or agent loop for a one-sentence reply.
+    const response=await request(url,{
+      method:"POST",redirect:"error",signal:AbortSignal.timeout(15000),
+      headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01"},
+      body:JSON.stringify({model:CHAT_MODEL,max_tokens:160,thinking:{type:"disabled"},output_config:{effort:"low"},
+        system:SYSTEM_PROMPT,messages:[{role:"user",content:safePrompt}]}),
     });
-    child.stderr.on("data", (chunk) => {
-      if (errorOutput.length < 2_000) errorOutput += chunk.toString();
-    });
-    child.on("error", reject);
-    child.on("close", (code, signal) => {
-      clearTimeout(timeout);
-      if (signal) return reject(new Error("我想了太久，脑袋冒烟啦。再问一次好吗？"));
-      if (code !== 0) {
-        if (process.argv.includes("--dev") && errorOutput.trim()) console.error(errorOutput.trim());
-        return reject(new Error("Claude Code 暂时没回应，请检查本机 provider 后再试。"));
-      }
-      const reply = cleanClaudeReply(output);
-      if (!reply) return reject(new Error("我刚刚走神了，再说一次好吗？"));
-      resolve(reply);
-    });
-  });
+    if(!response.ok) {
+      await response.body?.cancel();
+      if(response.status===401||response.status===403)throw new Error("DeepSeek 凭证暂不可用，请检查本机 provider 配置。");
+      if(response.status===429)throw new Error("聊得有点快啦，稍等一下再试好吗？");
+      throw new Error("DeepSeek 暂时没回应，请稍后再试。");
+    }
+    const data=await response.json();
+    const reply=cleanClaudeReply((data.content||[]).filter(block=>block.type==="text").map(block=>block.text).join(""));
+    if(!reply)throw new Error("我刚刚走神了，再说一次好吗？");
+    return reply;
+  } catch(error) {
+    if(error.name==="TimeoutError"||error.name==="AbortError")throw new Error("刚刚没听清，再问一次好吗？");
+    if(error instanceof TypeError)throw new Error("暂时连不上 DeepSeek，请检查网络后再试。");
+    if(error instanceof SyntaxError)throw new Error("DeepSeek 的回复暂时没接住，请再试一次。");
+    throw error;
+  }
 }

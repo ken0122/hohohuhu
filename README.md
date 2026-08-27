@@ -8,7 +8,9 @@
 
 - **Dodge（默认）**：持续可见、自由走动，光标慢慢靠近时正常让路，快速逼近时像神经反射一样弹开；逼近越快弹射越强，随后迅速减速恢复散步。短冷却避免连续乱弹，屏幕边缘会转向，不自动消失。系统开启「减少动态效果」时关闭弹射，保留普通避让。窗口点击穿透，不阻挡正常操作。
 - **Pet**：互动与移动合为一体。选择 Pet 或点击宠物后，方向键移动、松键停下；`Esc` 释放键盘焦点，宠物留在原地。切到其他应用不接收方向键，聊天时也不会误移动。无人互动时，每次安静 12–22 秒后短暂张望或伸展。
-- **Pac-Man**：当前屏幕出现遮罩和随机豆豆，用方向键移动，`Esc` 随时退出。每吃完一屏，速度增加 20 像素/秒（从 280 起），保持当前移动方向立即生效；顶部显示关卡和速度倍率，重新开局恢复初始速度。游戏角色不带眼皮，始终睁眼。
+- **Pac-Man**：当前屏幕出现遮罩和随机豆豆，用方向键移动，`Esc` 随时退出。每吃完一屏，在当前速度上提速 10%（280 → 308 → 338.8 像素/秒），保持当前方向立即生效；重新开局重置。提示、分数和倍率仅出现在顶部 96px 安全区，宠物和豆豆不会进入提示区。游戏角色不带眼皮。
+
+Pet / Dodge 互相切换不会瞬移：Dodge 平滑起步；回 Pet 时保留惯性，加速靠近上次停留的位置后减速停稳。途中再次切换会从当前速度接续；拖拽、方向键、Esc、聊天或隐藏可以中断过渡。「减少动态效果」下不播放长距离过渡。
 
 Pet 支持不同部位的反馈，均为短促动作与文字，不播放声音：
 
@@ -36,12 +38,12 @@ Pet 支持不同部位的反馈，均为短促动作与文字，不播放声音�
 
 ## 安装
 
-需要 Node.js 22+ 与已经可用的 [Claude Code](https://docs.anthropic.com/en/docs/claude-code)。
+需要 Node.js 22+。聊天需在 Claude Code 或 CC Switch 中配置可用的 DeepSeek provider；本机 CC Switch 的配置读取使用系统 `sqlite3`，不写入其数据库。
 
 从下载的 npm 包安装（npm 7+ 会自动安装 Electron peer 依赖）：
 
 ```bash
-npm install -g ./blue-one-eye-pet-0.3.2.tgz
+npm install -g ./blue-one-eye-pet-0.4.0.tgz
 bluepet
 ```
 
@@ -88,22 +90,20 @@ bluepet
 
 Electron 快捷键格式参见 `globalShortcut` 的 Accelerator 语法。注册失败时应用会发送系统通知，但不会覆盖已有快捷键。
 
-## Claude Code 聊天
+## 快速宠物聊天
 
-应用通过本机 `claude -p` 发起一次性、无工具、无会话持久化的请求，因此沿用 Claude Code 当前 provider 和认证配置，不读取、复制或保存密钥。宠物系统提示词位于 `src/chat.js` 的 `SYSTEM_PROMPT`。
+固定使用 `deepseek-v4-flash`，关闭思考（`thinking.type=disabled`），思考等级参数设为最低 `low`。配置依据：[DeepSeek 思考参数](https://api-docs.deepseek.com/guides/thinking_mode/)。直接请求 DeepSeek 的 Anthropic 兼容接口，省去每条消息启动 Claude Code CLI 的开销；不带工具、不保存历史。宠物系统提示词位于 `src/chat.js`。
+
+凭证只在主进程内读取和使用：先检查进程内 DeepSeek 环境变量，再读 CC Switch 当前选中的 Claude provider，最后检查 Claude Code 用户 `settings.json`（支持 `CLAUDE_CONFIG_DIR`）。只接受官方 `https://api.deepseek.com`，不会拿其他 provider 的密钥请求 DeepSeek，也不会修改全局 Claude Code / CC Switch 配置。未找到可用配置时会报错，不悄悄回退到其他模型。
 
 为了避免浮窗变成长对话：
 
 - 输入最多 500 字；
 - 系统提示要求只回一句；
 - 应用端再次限制为最多 50 个可见字符，超长时优先在标点/空格收尾并加省略号；
-- 单次请求 45 秒超时。
+- 单次请求 15 秒超时。
 
-如果 `claude` 不在常见安装位置，可以指定完整路径：
-
-```bash
-BLUEPET_CLAUDE_PATH="/absolute/path/to/claude" bluepet
-```
+原 `BLUEPET_CLAUDE_PATH` 不再需要；不要把密钥写入仓库或安装包。
 
 ## 开发
 
@@ -114,9 +114,9 @@ npm run test:desktop
 npm run pack
 ```
 
-核心进程只向渲染层暴露最小 IPC 接口，所有窗口启用 `contextIsolation`、`sandbox` 并关闭 `nodeIntegration`。聊天使用 `spawn` 参数数组调用 Claude Code，不经过 shell。
+核心进程只向渲染层暴露最小 IPC 接口，所有窗口启用 `contextIsolation`、`sandbox` 并关闭 `nodeIntegration`。聊天 HTTP 与凭证读取均在主进程，密钥不传入渲染层、不打印日志，拒绝 HTTP 重定向。
 
-桌面集成测试需要 macOS 图形会话；先退出已运行的宠物，以免测试快捷键与正式实例冲突。测试创建真实窗口，验证原 SVG 结构、路径形变、像素可见性、方向键、模式切换、持续可见和恢复流程，结果仅保存到被 Git 忽略的 `work/`。不会请求模型。
+桌面集成测试需要 macOS 图形会话；先退出已运行的宠物，以免测试快捷键与正式实例冲突。测试创建真实窗口，验证原 SVG、路径形变、像素可见性、方向键、惯性切换和恢复流程，结果仅保存到被 Git 忽略的 `work/`。默认不请求模型；显式设置 `BLUEPET_TEST_CHAT=1` 才会发送一条真实问候，验证聊天气泡。
 
 ## License
 
