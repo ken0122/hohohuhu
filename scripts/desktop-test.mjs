@@ -20,9 +20,21 @@ async function toggleAndWait() {
   if(getRuntime().state.manualHidden)await until(()=>!getRuntime().hiding,700);
 }
 const results = [];
+let currentCheck;
+const resultFile = path.resolve("work/desktop-test-results.json");
+async function writeResults(status, error) {
+  await writeFile(resultFile, JSON.stringify({
+    status, filter: process.env.BLUEPET_TEST_MATCH || null,
+    passed: results, failed: error ? currentCheck : undefined,
+    error: error?.message,
+  }, null, 2));
+}
 async function check(name, run) {
   if (process.env.BLUEPET_TEST_MATCH && !new RegExp(process.env.BLUEPET_TEST_MATCH).test(name)) return;
+  currentCheck = name;
   await run(); results.push(name); console.log("PASS", name);
+  currentCheck = undefined;
+  await writeResults("running");
 }
 async function visiblePixels(win = getRuntime().petWindow) {
   const capture = await win.webContents.capturePage();
@@ -34,6 +46,7 @@ async function visiblePixels(win = getRuntime().petWindow) {
 }
 async function run() {
 try {
+  await writeResults("running");
   await ready;
   await until(() => getRuntime().petWindow && !getRuntime().petWindow.webContents.isLoading());
   await delay(200);
@@ -255,14 +268,17 @@ try {
         await until(()=>win.webContents.executeJavaScript("Boolean(document.querySelector('.hide-particles'))"));
         await delay(100);
         const started=performance.now();toggleHidden();
+        // Observe native visibility concurrently. Screenshot/PNG/disk latency
+        // must not be included in the hide deadline.
+        const hiddenAt = until(() => !win.isVisible(), 1500).then(() => performance.now());
+        hiddenAt.catch(() => {}); // The awaited assertion below reports failures.
         assert.equal(getRuntime().state.manualHidden,true);
         await delay(120);assert.equal(win.isVisible(),true);
         assert.equal(await win.webContents.executeJavaScript("document.body.classList.contains('is-dissolving')"),true);
         const pixels=await win.webContents.executeJavaScript("(()=>{const c=document.querySelector('.hide-particles'),p=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<p.length;i+=4)if(p[i])n++;return n;})()");
         assert.ok(pixels>20,"real particle pixels are rendered");
         if(mode==="pet") { await delay(80);await writeFile(path.resolve("work/huluhulu-hide.png"),(await win.webContents.capturePage()).toPNG()); }
-        await until(()=>!win.isVisible(),500);
-        const elapsed=performance.now()-started;
+        const elapsed=(await hiddenAt)-started;
         assert.ok(elapsed<500,"native hide deadline: "+elapsed);
         console.log("Hide duration:",mode,Math.round(elapsed),"ms");
         await delay(550);assert.equal(win.isVisible(),false,"watchdog must respect manual hide");
@@ -397,6 +413,30 @@ try {
     assert.equal(getRuntime().petWindow.isVisible(),false);assert.deepEqual(getRuntime().state,before);
     await until(()=>closed,2000);clearTimeout(close);
     assert.deepEqual(getRuntime().state,before);
+  });
+  await check("Chat editing: native select-all, undo and redo in Pet and Dodge", async () => {
+    for (const mode of ["pet", "dodge"]) {
+      setMode(mode);
+      showChat();
+      const win = getRuntime().petWindow;
+      await until(() => win.isFocused());
+      await delay(100);
+      await evaluate("(()=>{const i=document.querySelector('#message');i.value='edit-check';i.focus();i.setSelectionRange(10,10);})()");
+      const key = (keyCode, shift = false) => {
+        const modifiers = shift ? ["meta", "shift"] : ["meta"];
+        win.webContents.sendInputEvent({ type: "keyDown", keyCode, modifiers });
+        win.webContents.sendInputEvent({ type: "keyUp", keyCode, modifiers });
+      };
+      key("A");
+      await until(() => evaluate("(()=>{const i=document.querySelector('#message');return i.selectionStart===0&&i.selectionEnd===10})()"));
+      win.webContents.insertText("changed");
+      await until(() => evaluate("document.querySelector('#message').value==='changed'"));
+      key("Z");
+      await until(() => evaluate("document.querySelector('#message').value==='edit-check'"));
+      key("Z", true);
+      await until(() => evaluate("document.querySelector('#message').value==='changed'"));
+      restorePetFrame();
+    }
   });
   await check("Pet keyboard: four directions, release, focus loss, chat isolation and legacy Control alias",async()=>{
     setMode("control"); await delay(150); assert.equal(getRuntime().state.mode,"pet");
@@ -663,6 +703,70 @@ try {
     await until(()=>getRuntime().petWindow&&getRuntime().petWindow.id!==old&&!getRuntime().petWindow.webContents.isLoading());
     await delay(180);await visiblePixels();
   });
+  await check("Recovery: Pet and Pac-Man watchdog respect hidden state without stealing focus", async () => {
+    for (const mode of ["pet", "pacman"]) {
+      setMode(mode);
+      await until(() => (mode === "pet" ? getRuntime().petWindow : getRuntime().gameWindow)?.isVisible());
+      const win = mode === "pet" ? getRuntime().petWindow : getRuntime().gameWindow;
+      await until(() => !win.webContents.isLoading());
+      await delay(150);
+      getRuntime().trayMenu.getMenuItemById("api-settings").click();
+      await until(() => getRuntime().settingsWindow?.isFocused());
+      win.hide();
+      await until(() => win.isVisible(), 2000);
+      assert.equal(getRuntime().settingsWindow.isFocused(), true, "watchdog must not steal focus");
+      assert.equal(win.isFocused(), false);
+      await visiblePixels(win);
+      getRuntime().settingsWindow.close();
+      await toggleAndWait();
+      await delay(1100);
+      recoverWindows();
+      assert.equal(win.isVisible(), false, "recovery cannot reveal a manual hide");
+      const menu = getRuntime().trayMenu;
+      menu.emit("menu-will-show");
+      cycleMode();
+      menu.emit("menu-will-close");
+      assert.equal(getRuntime().state.mode, mode);
+      assert.equal(win.isVisible(), false);
+      toggleHidden();
+      await until(() => win.isVisible());
+    }
+    setMode("pet");
+  });
+  await check("Pac-Man resize: real native shrink preserves progress and every bean remains collectable", async () => {
+    setMode("pacman");
+    await until(() => getRuntime().gameWindow?.isVisible());
+    const win = getRuntime().gameWindow;
+    const js = code => win.webContents.executeJavaScript(code);
+    await until(() => js("Boolean(document.querySelector('.hide-particles'))"));
+    const original = win.getBounds();
+    await js("import('./game.js').then(({game})=>{game.level=3;game.score=42;game.pet.speed=280*1.3**2;Object.assign(game.pet,{vx:0,vy:0});game.pellets=[{x:innerWidth-60,y:innerHeight-60,radius:5,glow:0},{x:innerWidth-160,y:innerHeight-60,radius:5,glow:0}];})");
+    win.setBounds({ ...original, width: 600, height: 400 });
+    await until(() => js("import('./game.js').then(({game})=>innerWidth===600&&innerHeight===400&&game.viewport.width===600&&game.viewport.height===400)"));
+    assert.deepEqual(win.getSize(), [600, 400]);
+    assert.equal(await js("import('./game.js').then(({game})=>game.pellets.length===2&&game.pellets.every(p=>p.x>=36&&p.x<=564&&p.y>=140&&p.y<=356)&&game.score===42&&game.level===3&&game.pet.speed===280*1.3**2)"), true);
+    // With both remaining beans on one row, real key input must clear the
+    // reflowed round; moving the pet does not relocate or delete the beans.
+    await js("import('./game.js').then(({game})=>{game.pet.x=Math.min(...game.pellets.map(p=>p.x))-60;game.pet.y=game.pellets[0].y;})");
+    app.focus({ steal: true });
+    win.focus();
+    win.webContents.sendInputEvent({ type: "keyDown", keyCode: "RIGHT" });
+    await until(() => js("import('./game.js').then(({game})=>game.level===4)"));
+    assert.equal(await js("import('./game.js').then(({game})=>game.score)"), 44);
+    assert.ok(await js("import('./game.js').then(({game})=>Math.abs(game.pet.speed-280*1.3**3)<1e-9)"));
+    await js("import('./game.js').then(({game})=>{game.pet.vx=game.pet.vy=0;})");
+    win.hide();
+    await until(() => win.isVisible(), 2000);
+    assert.deepEqual(win.getSize(), [600, 400], "watchdog does not resize a valid game");
+    await toggleAndWait();
+    win.setBounds(original);
+    await delay(650);
+    assert.equal(win.isVisible(), false, "resize while manually hidden must not reveal the game");
+    toggleHidden();
+    await until(() => win.isVisible());
+    assert.equal(await js("import('./game.js').then(({game})=>game.level)"), 4);
+    setMode("pet");
+  });
   await check("Pac-Man: smaller lidless sprite, real bean clears accelerate each round, hide/restore and restart",async()=>{
     setMode("pacman");await until(()=>getRuntime().gameWindow?.isVisible());
     const win=getRuntime().gameWindow;await delay(150);
@@ -715,9 +819,10 @@ try {
     console.log("Live bubble reply:",JSON.stringify({elapsedMs:Math.round(performance.now()-started),reply}));
     restorePetFrame();
   });
+  assert.ok(results.length, "test filter must select at least one check");
   console.log("Desktop integration checks passed:",results.length);
-  await writeFile(path.resolve("work/desktop-test-results.json"),JSON.stringify({passed:results},null,2));
+  await writeResults("passed");
   shutdown();
-} catch(error) { console.error(error);shutdown(1); }
+} catch(error) { console.error(error); await writeResults("failed", error); shutdown(1); }
 }
 run().catch(error => { console.error(error); shutdown(1); });

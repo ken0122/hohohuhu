@@ -12,25 +12,47 @@ export const CHAT_OFFSET = Object.freeze({
 });
 export const SPEECH_RECT = Object.freeze({ x: 12, y: 10, width: 248, height: 140 });
 export function chatMotionBounds(bounds) {
-  return {x:bounds.x+CHAT_OFFSET.x,y:bounds.y+CHAT_OFFSET.y,
-    width:bounds.width-CHAT_OFFSET.x*2,height:bounds.height-CHAT_OFFSET.y};
+  return {
+    x: bounds.x + CHAT_OFFSET.x,
+    y: bounds.y + CHAT_OFFSET.y,
+    width: bounds.width - CHAT_OFFSET.x * 2,
+    height: bounds.height - CHAT_OFFSET.y,
+  };
 }
 export function chatFrame(position, bounds) {
   return {
-    x:clamp(position.x-CHAT_OFFSET.x,bounds.x,bounds.x+bounds.width-CHAT_SIZE.width),
-    y:clamp(position.y-CHAT_OFFSET.y,bounds.y,bounds.y+bounds.height-CHAT_SIZE.height),
+    x: clamp(position.x - CHAT_OFFSET.x, bounds.x, bounds.x + bounds.width - CHAT_SIZE.width),
+    y: clamp(position.y - CHAT_OFFSET.y, bounds.y, bounds.y + bounds.height - CHAT_SIZE.height),
     ...CHAT_SIZE,
   };
 }
 export function cursorInSpeech(cursor, frame) {
-  const x=cursor.x-frame.x, y=cursor.y-frame.y;
-  return x>=SPEECH_RECT.x && x<=SPEECH_RECT.x+SPEECH_RECT.width
-    && y>=SPEECH_RECT.y && y<=SPEECH_RECT.y+SPEECH_RECT.height;
+  const x = cursor.x - frame.x,
+    y = cursor.y - frame.y;
+  return (
+    x >= SPEECH_RECT.x &&
+    x <= SPEECH_RECT.x + SPEECH_RECT.width &&
+    y >= SPEECH_RECT.y &&
+    y <= SPEECH_RECT.y + SPEECH_RECT.height
+  );
 }
-export function normalizeMode(mode) { return mode === "control" ? MODES.PET : mode; }
+export function normalizeMode(mode) {
+  return mode === "control" ? MODES.PET : mode;
+}
+export function editingAction(input, platform) {
+  const primaryModifier = platform === "darwin" ? input.meta : input.control;
+  if (input.type !== "keyDown" || !primaryModifier || input.alt) return;
+  return {
+    a: "selectAll",
+    c: "copy",
+    v: "paste",
+    x: "cut",
+    z: input.shift ? "redo" : "undo",
+  }[input.key.toLowerCase()];
+}
 export function nextMode(mode) {
-  const order=[MODES.DODGE,MODES.PET,MODES.PACMAN];
-  return order[(order.indexOf(normalizeMode(mode))+1)%order.length];
+  const order = [MODES.DODGE, MODES.PET, MODES.PACMAN];
+  return order[(order.indexOf(normalizeMode(mode)) + 1) % order.length];
 }
 
 export function clamp(value, min, max) {
@@ -46,8 +68,13 @@ export function fitPet(position, bounds, size = PET_FRAME_SIZE) {
 }
 
 export function validDragPoint(point) {
-  return point && Number.isFinite(point.x) && Number.isFinite(point.y)
-    && Math.abs(point.x) < 1000000 && Math.abs(point.y) < 1000000;
+  return (
+    point &&
+    Number.isFinite(point.x) &&
+    Number.isFinite(point.y) &&
+    Math.abs(point.x) < 1000000 &&
+    Math.abs(point.y) < 1000000
+  );
 }
 export function dragPosition(origin, start, cursor, bounds) {
   return fitPet({ x: origin.x + cursor.x - start.x, y: origin.y + cursor.y - start.y }, bounds);
@@ -71,9 +98,10 @@ export function petShouldShow({ mode, manualHidden }) {
 
 export function limitUnicode(text, maxLength = 50) {
   const normalized = String(text).trim();
-  const segmenter = typeof Intl.Segmenter === "function"
-    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-    : null;
+  const segmenter =
+    typeof Intl.Segmenter === "function"
+      ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+      : null;
   const characters = segmenter
     ? Array.from(segmenter.segment(normalized), ({ segment }) => segment)
     : Array.from(normalized);
@@ -92,9 +120,10 @@ export function limitUnicode(text, maxLength = 50) {
     candidate.lastIndexOf("；"),
     candidate.lastIndexOf(";"),
   );
-  const natural = boundary >= Math.floor(maxLength * 0.55)
-    ? candidate.slice(0, boundary + (candidate[boundary] === " " ? 0 : 1))
-    : candidate;
+  const natural =
+    boundary >= Math.floor(maxLength * 0.55)
+      ? candidate.slice(0, boundary + (candidate[boundary] === " " ? 0 : 1))
+      : candidate;
   return `${natural.trimEnd()}…`;
 }
 
@@ -109,7 +138,14 @@ export function cleanClaudeReply(text) {
   );
 }
 
-export function nextDodgeVelocity({ petCenter, cursor, velocity, dt, bounds, random = Math.random }) {
+export function nextDodgeVelocity({
+  petCenter,
+  cursor,
+  velocity,
+  dt,
+  bounds,
+  random = Math.random,
+}) {
   const dx = petCenter.x - cursor.x;
   const dy = petCenter.y - cursor.y;
   const distance = Math.max(1, Math.hypot(dx, dy));

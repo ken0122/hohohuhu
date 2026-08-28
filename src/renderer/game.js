@@ -1,12 +1,12 @@
 import { createMascot } from "./mascot.js";
-import { createGame, updateGame, GAME_HUD_HEIGHT } from "./game-state.js";
+import { createGame, resizeGame, updateGame, GAME_HUD_HEIGHT } from "./game-state.js";
 import { installHideEffect } from "./hide-effect.js";
 const canvas = document.querySelector("#game");
 const context = canvas.getContext("2d");
 const spriteHost = document.querySelector("#game-pet");
 const sprite = await createMascot(spriteHost, { eyelids: false });
-const hideEffect=await installHideEffect(spriteHost,()=>sprite.setActive(false));
-window.bluepet.onHideCancel(()=>sprite.setActive(true));
+const hideEffect = await installHideEffect(spriteHost, () => sprite.setActive(false));
+window.bluepet.onHideCancel(() => sprite.setActive(true));
 const scoreElement = document.querySelector("#score");
 const levelMessage = document.querySelector("#level-message");
 const exitButton = document.querySelector("#exit");
@@ -15,7 +15,7 @@ export const game = createGame(window.innerWidth, window.innerHeight);
 const pet = game.pet;
 const roundElement = document.querySelector("#round");
 const speedElement = document.querySelector("#speed");
-document.documentElement.style.setProperty("--game-hud-height",`${GAME_HUD_HEIGHT}px`);
+document.documentElement.style.setProperty("--game-hud-height", `${GAME_HUD_HEIGHT}px`);
 spriteHost.style.width = spriteHost.style.height = `${pet.size}px`;
 let previousTime = performance.now();
 
@@ -24,10 +24,7 @@ function resize() {
   canvas.width = Math.round(window.innerWidth * ratio);
   canvas.height = Math.round(window.innerHeight * ratio);
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
-  if (!pet.x) {
-    pet.x = window.innerWidth / 2;
-    pet.y = window.innerHeight / 2;
-  }
+  resizeGame(game, window.innerWidth, window.innerHeight);
 }
 
 function showLevelMessage(text) {
@@ -37,14 +34,15 @@ function showLevelMessage(text) {
 }
 
 function handleKey(event) {
-  if(hideEffect.active)return;
+  if (hideEffect.active) return;
   const directions = {
     ArrowLeft: [-1, 0],
     ArrowRight: [1, 0],
     ArrowUp: [0, -1],
     ArrowDown: [0, 1],
   };
-  if (event.key === "Escape" || event.key === "Esc" || event.keyCode === 27) return window.bluepet.exitGame();
+  if (event.key === "Escape" || event.key === "Esc" || event.keyCode === 27)
+    return window.bluepet.exitGame();
   const direction = directions[event.key];
   if (!direction) return;
   event.preventDefault();
@@ -64,7 +62,7 @@ function update(dt) {
 function draw(time) {
   context.clearRect(0, 0, window.innerWidth, window.innerHeight);
   for (const pellet of game.pellets) {
-    const breathing = reducedMotion ? 1 : 1 + Math.sin(time / 420 + pellet.glow) * .12;
+    const breathing = reducedMotion ? 1 : 1 + Math.sin(time / 420 + pellet.glow) * 0.12;
     context.beginPath();
     context.arc(pellet.x, pellet.y, pellet.radius * breathing, 0, Math.PI * 2);
     context.fillStyle = pellet.radius > 5 ? "#ffda67" : "#fff0a6";
@@ -73,20 +71,25 @@ function draw(time) {
     context.fill();
   }
   context.shadowBlur = 0;
-  const scale = 1 + game.pulse * .12;
+  const scale = 1 + game.pulse * 0.12;
   spriteHost.style.transform = `translate(${pet.x - pet.size / 2}px, ${pet.y - pet.size / 2}px) scale(${scale})`;
   sprite.motion({ x: pet.vx, y: pet.vy, gait: pet.vx || pet.vy ? "run" : "idle" });
 }
 
 function frame(time) {
-  const dt = Math.min(.05, (time - previousTime) / 1000);
+  const dt = Math.min(0.05, (time - previousTime) / 1000);
   previousTime = time;
-  if (!document.hidden&&!hideEffect.active) { update(dt);draw(time); }
+  if (!document.hidden && !hideEffect.active) {
+    update(dt);
+    draw(time);
+  }
   requestAnimationFrame(frame);
 }
 
 window.addEventListener("resize", resize);
-document.addEventListener("visibilitychange", () => document.body.classList.toggle("is-paused", document.hidden));
+document.addEventListener("visibilitychange", () =>
+  document.body.classList.toggle("is-paused", document.hidden),
+);
 window.addEventListener("keydown", handleKey);
 exitButton.addEventListener("click", () => window.bluepet.exitGame());
 resize();
