@@ -12,7 +12,19 @@ const speech = document.querySelector(".speech");
 const sendButton = form.querySelector("button[type='submit']");
 const pet = document.querySelector("#pet");
 const hint = document.querySelector("#pet-hint");
-const character = await createMascot(document.querySelector("#character"));
+const characterHost = document.querySelector("#character");
+const character = await createMascot(characterHost);
+const affectionSymbols = Array.from(document.querySelectorAll(".affection span"));
+function applyCharacterPresentation() {
+  const { id, affection } = character.definition;
+  body.dataset.character = id;
+  affectionSymbols.forEach((symbol, index) => { symbol.textContent = affection.symbols[index]; });
+  body.style.setProperty("--affection-color", affection.color);
+  body.style.setProperty("--affection-shadow", affection.shadow);
+}
+applyCharacterPresentation();
+characterHost.addEventListener("character-mounted", applyCharacterPresentation);
+window.addEventListener("pagehide", () => character.destroy(), { once: true });
 let mode = "dodge", chatOpen = false, near = false, pending = false;
 let reactionTimer, hintTimer, hoverTimer, lastReaction = 0;
 let moving = false, holdTimer, pressPoint, suppressClick = false;
@@ -52,6 +64,7 @@ function scheduleIdle() {
   idleTimer = setTimeout(() => {
     idleTimer = undefined;
     body.dataset.reaction = ++idleCount % 2 ? "idle-look" : "idle-stretch";
+    character.react(body.dataset.reaction);
     if (body.dataset.reaction === "idle-look") character.motion({ x: idleCount % 4 === 1 ? -1 : 1, y: -.2 });
     idleFinish = setTimeout(() => {
       idleFinish = undefined;
@@ -77,13 +90,14 @@ function react(kind, message) {
   const count = reactionCounts[kind] || 0;
   hint.textContent = message || messages[count % messages.length];
   reactionCounts[kind] = count + 1;
-  reactionTimer = setTimeout(() => { delete body.dataset.reaction; hint.textContent = ""; scheduleIdle(); }, duration);
+  reactionTimer = setTimeout(() => { delete body.dataset.reaction; character.react(null); hint.textContent = ""; scheduleIdle(); }, duration);
 }
 function resetReaction() {
   stopIdle();
   clearTimeout(holdTimer); pressPoint = undefined; suppressClick = false;
   clearTimeout(reactionTimer); clearTimeout(hoverTimer); clearTimeout(hintTimer);
   delete body.dataset.reaction;
+  character.react(null);
   body.classList.remove("is-affectionate");
   near = false; hovering = false; hint.textContent = ""; gesture.reset();
 }

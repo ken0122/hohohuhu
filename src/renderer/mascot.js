@@ -1,56 +1,35 @@
-import { gaitFrames } from "./shape-motion.js";
-import { createEyeMotion } from "./eye-motion.js";
+import { characterDefinition } from "../characters.js";
+import { validateGeneratedSvg } from "../character-import.js";
+import { mountCharacter } from "./character.js";
 
+// Stable facade: swapping artwork never reloads the game/chat or native window.
 export async function createMascot(host, { eyelids = true } = {}) {
-  // Render the supplied SVG itself, not a redraw. The asset stays byte-for-byte
-  // unchanged; only its existing body path gets a temporary CSS d animation.
-  const source = await window.bluepet.loadMascot();
-  const parsed = new DOMParser().parseFromString(source, "image/svg+xml");
-  if (parsed.querySelector("parsererror")) throw new Error("Invalid mascot SVG");
-  const svg = document.importNode(parsed.documentElement, true);
-  svg.classList.add("mascot-svg");
-  svg.dataset.gait = "idle";
-  // Game-only runtime variant; never edit the supplied SVG asset.
-  if (!eyelids) svg.querySelector(".lid")?.remove();
-  host.replaceChildren(svg);
-  const body = svg.querySelector("path.body");
-  const originalPath = body.getAttribute("d");
-  const frames = { walk: gaitFrames(originalPath, "walk"), run: gaitFrames(originalPath, "run") };
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
-  const eyes = createEyeMotion(svg.querySelector(".lid"), reduced);
-  let animation, gait = "idle";
-  function animateShape() {
-    animation?.cancel();
-    animation = undefined;
-    if (gait !== "idle" && !reduced.matches) {
-      animation = body.animate(frames[gait], { duration: gait === "run" ? 220 : 680, iterations: Infinity, easing: "linear" });
-      if (document.hidden) animation.pause();
-    }
+  let current, serial = 0, destroyed = false, active = true, motion = {}, reaction;
+  async function reload() {
+    const version = ++serial;
+    const entry = await window.bluepet.loadCharacter();
+    if (destroyed || version !== serial) return;
+    const definition = characterDefinition(entry.id);
+    if (!entry.builtin) validateGeneratedSvg(entry.svg);
+    const parsed = new DOMParser().parseFromString(entry.svg, "image/svg+xml");
+    if (parsed.querySelector("parsererror")) throw new Error("Invalid character SVG");
+    const svg = document.importNode(parsed.documentElement, true);
+    current = mountCharacter(host, svg, definition, { eyelids });
+    current.setActive(active); current.motion(motion); current.react(reaction);
+    delete host.dataset.characterError;
+    host.dispatchEvent(new Event("character-mounted", { bubbles: true }));
   }
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) animation?.pause(); else animation?.play();
+  const unsubscribe = window.bluepet.onCharacterChanged(() => {
+    reload().catch(() => { host.dataset.characterError = "true"; });
   });
-  reduced.addEventListener("change", animateShape);
+  try { await reload(); while (!current) await reload(); } catch (error) { unsubscribe(); throw error; }
   return {
-    svg,
-    setActive: eyes.setActive,
-    react: eyes.react,
-    motion({ x = 0, y = 0, gait: nextGait = "idle", gaze }) {
-      svg.dataset.cursorGaze = String(Boolean(gaze));
-      const look = gaze ?? { x, y };
-      const magnitude = Math.hypot(look.x, look.y);
-      if (gaze || magnitude) {
-        svg.dataset.looking = "true";
-        svg.style.setProperty("--gaze-x", (magnitude ? look.x / magnitude * 4 : 0).toFixed(2) + "px");
-        svg.style.setProperty("--gaze-y", (magnitude ? look.y / magnitude * 4 : 0).toFixed(2) + "px");
-      }
-      if (!["walk", "run"].includes(nextGait)) nextGait = "idle";
-      if (nextGait !== gait) { gait = nextGait; svg.dataset.gait = gait; animateShape(); }
-    },
-    reset() {
-      gait = "idle"; svg.dataset.gait = gait; delete svg.dataset.looking;
-      delete svg.dataset.cursorGaze;
-      animateShape();
-    },
+    get svg() { return current.svg; },
+    get definition() { return current.definition; },
+    setActive(value) { active = Boolean(value); current.setActive(active); },
+    motion(value = {}) { motion = value; current.motion(value); },
+    react(value) { reaction = value; current.react(value); },
+    reset() { motion = {}; reaction = undefined; current.reset(); },
+    destroy() { destroyed = true; ++serial; unsubscribe(); current?.destroy(); },
   };
 }

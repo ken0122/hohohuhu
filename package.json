@@ -25,7 +25,9 @@
     "icon": "node scripts/build-icon.mjs",
     "pack": "electron-builder --dir",
     "dist:mac": "electron-builder --mac dmg zip --publish never",
-    "release:mac": "node scripts/release.mjs"
+    "release:mac": "node scripts/release.mjs",
+    "character:convert": "node scripts/convert-character.mjs",
+    "character:preview": "electron scripts/preview-character.mjs"
   },
   "keywords": [
     "desktop-pet",

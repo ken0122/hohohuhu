@@ -6,6 +6,8 @@
   --blue: #4569df;
   --blue-dark: #2949b6;
   --paper: #fbfcff;
+  --affection-color: #6e89f1;
+  --affection-shadow: 0 2px 7px rgba(37, 64, 155, .24);
 }
 
 * { box-sizing: border-box; }
@@ -54,7 +56,7 @@ body[data-mode="pet"] .pet:hover .ground,
 body[data-mode="pet"].is-affectionate .ground { transform: translateY(5px) scaleX(.82); opacity: .65; }
 .affection { position: absolute; z-index: 4; left: 50%; bottom: 72px; width: 68px; transform: translateX(-50%); pointer-events: none; }
 body.is-moving .affection { display: none; }
-.affection span { position: absolute; color: #6e89f1; opacity: 0; font-size: 13px; text-shadow: 0 2px 7px rgba(37, 64, 155, .24); }
+.affection span { position: absolute; color: var(--affection-color); opacity: 0; font-size: 13px; text-shadow: var(--affection-shadow); }
 .affection span:nth-child(1) { left: 10px; }
 .affection span:nth-child(2) { left: 34px; top: -8px; }
 .affection span:nth-child(3) { right: 8px; top: 5px; }

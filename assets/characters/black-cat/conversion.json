@@ -1,0 +1,28 @@
+{
+  "profile": "monochrome-v1",
+  "width": 400,
+  "height": 300,
+  "bounds": {
+    "x": 161,
+    "y": 105,
+    "width": 92,
+    "height": 86
+  },
+  "color": "#111111",
+  "darkContours": 3,
+  "lightContours": 2,
+  "transform": {
+    "scale": 0.6086956521739131,
+    "offsetX": -94,
+    "offsetY": -56.260869565217405
+  },
+  "limitations": [
+    "白底或透明底、单色深色角色",
+    "按阈值二值化，不保留灰阶纹理",
+    "移除外部浅色区域及浅灰阴影",
+    "不识别或补画身体部件",
+    "边缘按像素轮廓近似"
+  ],
+  "sourceSha256": "464d5df250a268ddee962c756fcb4be5580ee777143af50f371c0b8514f7d8c7",
+  "svgSha256": "672a36b61634bbe3d0a6e5e8dc634dd9133f4941a8cdefa04eb47a149cd7c8a1"
+}

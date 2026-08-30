@@ -22,19 +22,19 @@ export function cubicOutline(path) {
   return segments;
 }
 
-export function deformOutline(outline, phase, amplitude) {
+export function deformOutline(outline, phase, amplitude, profile) {
   return outline.map(segment => segment.command + segment.points.map(([x,y]) => {
     // The head/eye area never changes. A traveling wave flexes only the same
     // continuous lower outline; no new feet, masks, overlays or body panels.
-    const weight = Math.max(0, Math.min(1, (y - 42) / 14));
-    const dy = Math.sin(phase + (x - 12) / 40 * Math.PI * 2) * amplitude * weight;
+    const weight = Math.max(0, Math.min(1, (y - profile.startY) / profile.depth));
+    const dy = Math.sin(phase + (x - profile.originX) / profile.width * Math.PI * 2) * amplitude * weight;
     return x.toFixed(3) + " " + (y + dy).toFixed(3);
   }).join(" ")).join(" ");
 }
 
-export function gaitFrames(path, gait) {
-  const outline = cubicOutline(path), amplitude = gait === "run" ? 2.1 : .8;
+export function gaitFrames(path, gait, profile) {
+  const outline = cubicOutline(path), amplitude = profile[gait + "Amplitude"];
   return [0,1,2,3,4].map(step => ({
-    d: 'path("' + deformOutline(outline, step * Math.PI / 2, amplitude) + '")', offset: step / 4,
+    d: 'path("' + deformOutline(outline, step * Math.PI / 2, amplitude, profile) + '")', offset: step / 4,
   }));
 }

@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { app, globalShortcut, nativeImage, screen, powerMonitor, systemPreferences } from "electron";
+import { pathToFileURL } from "node:url";
+import { app, dialog, globalShortcut, nativeImage, screen, powerMonitor, systemPreferences } from "electron";
 
 // Do not await app readiness at module top level: Electron awaits ESM evaluation.
 // Real Electron windows, isolated app data. Live chat is explicitly opt-in.
 await mkdir(path.resolve("work"), { recursive: true });
 app.setPath("userData", await mkdtemp(path.resolve("work/desktop-test-")));
-const runtime = await import("../src/main.js");
+const runtime = await import(process.env.BLUEPET_TEST_APP_ROOT
+  ? pathToFileURL(path.join(process.env.BLUEPET_TEST_APP_ROOT, "src/main.js")).href
+  : "../src/main.js");
 const { getRuntime, ready, setMode, cycleMode, toggleHidden, showChat, restorePetFrame, recoverWindows, shutdown } = runtime;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(fn, timeout = 4000) {
@@ -24,7 +27,7 @@ let currentCheck;
 const resultFile = path.resolve("work/desktop-test-results.json");
 async function writeResults(status, error) {
   await writeFile(resultFile, JSON.stringify({
-    status, filter: process.env.BLUEPET_TEST_MATCH || null,
+    status, filter: process.env.BLUEPET_TEST_MATCH || null, appRoot: process.env.BLUEPET_TEST_APP_ROOT || null,
     passed: results, failed: error ? currentCheck : undefined,
     error: error?.message,
   }, null, 2));
@@ -51,6 +54,166 @@ try {
   await until(() => getRuntime().petWindow && !getRuntime().petWindow.webContents.isLoading());
   await delay(200);
   await until(()=>evaluate("Boolean(document.querySelector('.mascot-svg'))"));
+  await check("Character library: preview/apply, hidden state, live replacement and game continuity", async () => {
+    setMode("pet"); await until(() => !getRuntime().modeTransition, 7000);
+    await toggleAndWait();
+    getRuntime().trayMenu.getMenuItemById("characters").click();
+    await until(() => getRuntime().characterWindow?.isVisible());
+    const win = getRuntime().characterWindow, js = code => win.webContents.executeJavaScript(code);
+    await until(() => js("document.body.dataset.ready === 'true'"));
+    assert.equal(getRuntime().state.manualHidden, true);
+    assert.equal(getRuntime().petWindow.isVisible(), false);
+    assert.equal(await js("typeof window.bluepet"), "undefined");
+    const prefs = win.webContents.getLastWebPreferences();
+    assert.equal(prefs.sandbox, true); assert.equal(prefs.contextIsolation, true); assert.equal(prefs.nodeIntegration, false);
+    getRuntime().trayMenu.getMenuItemById("characters").click(); assert.equal(getRuntime().characterWindow, win);
+    await js("document.querySelector('[data-id=black-cat]').click()");
+    await until(() => js("document.querySelector('#large svg')?.dataset.character === 'black-cat' && !document.querySelector('#apply').disabled"));
+    assert.deepEqual(await js("[document.querySelectorAll('.cat-pupils').length,document.querySelectorAll('.cat-pupils circle').length]"), [3,6]);
+    assert.match(await js("document.querySelector('#capabilities').textContent"), /眼睛会跟随/);
+    assert.match(await js("document.querySelector('#selection-status').textContent"), /正在预览.*当前是/);
+    assert.equal(await js("document.querySelector('[data-id=blue-one-eye] .current-badge').textContent"), "当前");
+    await js("document.querySelector('.stage').dispatchEvent(new PointerEvent('pointermove',{clientX:700,clientY:120,bubbles:true}))");
+    assert.equal(await js("document.querySelector('#large svg').dataset.looking"), "true");
+    assert.notEqual(await js("document.querySelector('#large svg').style.getPropertyValue('--gaze-x')"), "0.00px");
+    await js("document.querySelector('.stage').dispatchEvent(new PointerEvent('pointerleave',{bubbles:true}))");
+    assert.equal(await js("document.querySelector('#large svg').dataset.looking"), undefined);
+    assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.character"), "blue-one-eye", "preview alone must not apply");
+    await evaluate("window.oldCharacter = document.querySelector('.mascot-svg')");
+    await js("document.querySelector('#apply').click()");
+    await until(() => evaluate("document.querySelector('.mascot-svg').dataset.character === 'black-cat' && document.querySelector('#pet').dataset.hideCharacter === 'black-cat'"));
+    assert.equal(await evaluate("window.oldCharacter.dataset.active"), "false");
+    assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.active"), "false");
+    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.affection span'),node=>node.textContent)"), ["✦","♥","✦"]);
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.affection span')).color"), "rgb(242, 188, 82)");
+    assert.equal(await evaluate("document.querySelectorAll('.cat-pupils circle').length"), 2);
+    assert.equal(await js("document.querySelector('#apply').textContent"), "已是当前角色");
+    assert.equal(await js("document.querySelector('#apply').classList.contains('is-current')"), true);
+    assert.equal(await js("document.querySelector('[data-id=black-cat] .current-badge').textContent"), "当前");
+    assert.equal(getRuntime().state.manualHidden, true);
+    assert.equal(getRuntime().petWindow.isVisible(), false);
+    await toggleAndWait();
+    const petWindow = getRuntime().petWindow;
+    app.focus({steal:true}); petWindow.focus(); petWindow.webContents.focus();
+    await until(() => petWindow.isFocused());
+    const beforeMove = petWindow.getPosition();
+    petWindow.webContents.sendInputEvent({type:"keyDown",keyCode:"LEFT"});
+    await delay(200);
+    assert.ok(petWindow.getPosition()[0] < beforeMove[0] - 10, "black cat must move the native window");
+    assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.gait"),"run");
+    assert.ok(await evaluate("document.querySelector('.mascot-svg').getAnimations().length > 0"));
+    petWindow.webContents.sendInputEvent({type:"keyUp",keyCode:"LEFT"});
+    await until(() => evaluate("document.querySelector('.mascot-svg').dataset.gait === 'idle'"));
+    await toggleAndWait(); assert.equal(petWindow.isVisible(),false);
+    await toggleAndWait(); assert.equal(petWindow.isVisible(),true);
+    showChat();
+    await evaluate("document.querySelector('#message').value='keep draft'");
+    await js("document.querySelector('[data-id=blue-one-eye]').click()");
+    await until(() => js("!document.querySelector('#apply').disabled"));
+    await js("document.querySelector('#apply').click()");
+    await until(() => evaluate("document.querySelector('.mascot-svg').dataset.character === 'blue-one-eye'"));
+    assert.equal(getRuntime().state.chatOpen, true);
+    assert.equal(await evaluate("document.querySelector('#message').value"), "keep draft");
+    restorePetFrame(); setMode("pacman");
+    await until(() => getRuntime().gameWindow?.isVisible());
+    const gameWindow = getRuntime().gameWindow;
+    const gameJs = code => gameWindow.webContents.executeJavaScript(code);
+    await until(() => gameJs("Boolean(document.querySelector('.mascot-svg'))"));
+    await gameJs("import('./game.js').then(({game})=>{game.score=7;game.level=2;game.pet.speed=364;window.savedGame=game;window.savedPellets=JSON.stringify(game.pellets);})");
+    await js("document.querySelector('[data-id=black-cat]').click()");
+    await until(() => js("!document.querySelector('#apply').disabled"));
+    await js("document.querySelector('#apply').click()");
+    await until(() => gameJs("document.querySelector('.mascot-svg').dataset.character === 'black-cat'"));
+    assert.equal(getRuntime().gameWindow, gameWindow);
+    assert.deepEqual(await gameJs("[savedGame.score,savedGame.level,savedGame.pet.speed,JSON.stringify(savedGame.pellets)===savedPellets]"),[7,2,364,true]);
+    assert.equal(await gameJs("document.querySelectorAll('.character-lid').length"),0);
+    assert.equal(await gameJs("document.querySelectorAll('.cat-pupils circle').length"),2);
+    await writeFile(path.resolve("work/character-library.png"),(await win.webContents.capturePage()).toPNG());
+    await js("document.querySelector('[data-id=blue-one-eye]').click()");
+    await until(() => js("!document.querySelector('#apply').disabled"));
+    await js("document.querySelector('#apply').click()");
+    await until(() => gameJs("document.querySelector('.mascot-svg').dataset.character === 'blue-one-eye'"));
+    assert.equal(await gameJs("document.querySelectorAll('.character-lid').length"),0);
+    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.affection span'),node=>node.textContent)"), ["♥","♥","♥"]);
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.affection span')).color"), "rgb(110, 137, 241)");
+    win.close(); await until(() => !getRuntime().characterWindow); setMode("pet");
+  });
+  await check("Character import: native picker boundary, real worker conversion, confirm, reopen and removal", async () => {
+    const originalPicker = dialog.showOpenDialog;
+    const originalMessageBox = dialog.showMessageBox;
+    let pickerCalls = 0, closePrompts = 0;
+    let picked = path.resolve("assets/characters/black-cat/source.png");
+    dialog.showOpenDialog = async () => { pickerCalls++; return picked ? {canceled:false,filePaths:[picked]} : {canceled:true,filePaths:[]}; };
+    try {
+      getRuntime().trayMenu.getMenuItemById("characters").click();
+      await until(() => getRuntime().characterWindow?.isVisible());
+      const win = getRuntime().characterWindow, js = code => win.webContents.executeJavaScript(code);
+      await until(() => js("document.body.dataset.ready === 'true'"));
+      await js("document.querySelector('#choose').click()");
+      await until(() => js("!document.querySelector('#draft-fields').hidden || document.querySelector('#status').dataset.error === 'true'"), 12000);
+      assert.equal(await js("document.querySelector('#status').dataset.error"), "false", await js("document.querySelector('#status').textContent"));
+      const callsBeforeGuard = pickerCalls;
+      await js("window.confirm=()=>false;document.querySelector('#choose').click()");
+      await delay(80);
+      assert.equal(pickerCalls, callsBeforeGuard, "reimport guard must run before native picker");
+      assert.equal(await js("document.querySelector('#selection-status').textContent.includes('未保存草稿')"), true);
+      dialog.showMessageBox = async () => { closePrompts++; return {response:0}; };
+      await delay(80); win.close();
+      await until(() => closePrompts === 1);
+      assert.equal(win.isDestroyed(), false); assert.equal(win.isVisible(), true);
+      assert.equal(await js("document.querySelector('#draft-fields').hidden"), false);
+      dialog.showMessageBox = originalMessageBox;
+      assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.character"), "blue-one-eye");
+      await js("document.querySelector('button[data-gait=walk]').click()");
+      await until(() => js("document.querySelector('#desktop svg').getAnimations().length > 0"));
+      await js("document.querySelector('#pause').click()");
+      assert.equal(await js("document.querySelector('#desktop svg').getAnimations().length"),0);
+      await js("document.querySelector('#pause').click()");
+      await until(() => js("document.querySelector('#desktop svg').getAnimations().length > 0"));
+      await js("document.querySelector('button[data-gait=idle]').click();document.querySelector('#character-name').value='桌面测试角色'");
+      assert.equal(await js("document.querySelector('#apply').getBoundingClientRect().bottom <= innerHeight"),true);
+      await writeFile(path.resolve("work/character-import.png"),(await win.webContents.capturePage()).toPNG());
+      const fullSize = win.getSize(); win.setSize(720,620);
+      await until(() => js("innerWidth === 720"));
+      assert.equal(await js("document.querySelector('#apply').getBoundingClientRect().bottom <= innerHeight && document.documentElement.scrollWidth <= innerWidth"),true);
+      await writeFile(path.resolve("work/character-library-small.png"),(await win.webContents.capturePage()).toPNG());
+      win.setSize(...fullSize);
+      await js("document.querySelector('#apply').click()");
+      await until(() => evaluate("document.querySelector('.mascot-svg').dataset.character.startsWith('local-')"));
+      const importedId = await evaluate("document.querySelector('.mascot-svg').dataset.character");
+      const {readFile} = await import('node:fs/promises');
+      const stored = JSON.parse(await readFile(path.join(app.getPath('userData'),'characters-v1.json'),'utf8'));
+      assert.equal(stored.selected,importedId); assert.equal(stored.items[0].name,'桌面测试角色');
+      assert.equal(stored.items[0].svg,await js("window.characterLibrary.source("+JSON.stringify(importedId)+").then(r=>r.value.svg)"));
+      assert.equal((await js("window.characterLibrary.import({name:'attack',svg:'<svg onload=\"alert(1)\"/>'})")).ok,false);
+      const {default:sharp} = await import('sharp');
+      picked = path.resolve('work/character-import-fixture.jpg');
+      await sharp(path.resolve('assets/characters/black-cat/source.png')).jpeg({quality:95}).toFile(picked);
+      await js("document.querySelector('#choose').click()");
+      await until(() => js("!document.querySelector('#draft-fields').hidden || document.querySelector('#status').dataset.error === 'true'"),12000);
+      assert.equal(await js("document.querySelector('#status').dataset.error"),'false',await js("document.querySelector('#status').textContent"));
+      await js("document.querySelector('#cancel').click()");
+      await until(() => js("document.querySelector('#draft-fields').hidden && document.body.getAttribute('aria-busy') === 'false'"));
+      assert.equal(JSON.parse(await readFile(path.join(app.getPath('userData'),'characters-v1.json'),'utf8')).items.length,1,"discarded JPG draft is not saved");
+      picked = path.resolve('assets/blue-one-eye-mascot.svg');
+      await js("document.querySelector('#choose').click()");
+      await until(() => js("document.querySelector('#status').dataset.error === 'true'"));
+      assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.character"),importedId);
+      picked = null;
+      await js("document.querySelector('#choose').click()");
+      await until(() => js("document.body.getAttribute('aria-busy') === 'false'"));
+      win.close(); await until(() => !getRuntime().characterWindow);
+      getRuntime().trayMenu.getMenuItemById('characters').click();
+      await until(() => getRuntime().characterWindow?.isVisible());
+      const reopened = code => getRuntime().characterWindow.webContents.executeJavaScript(code);
+      await until(() => reopened("document.body.dataset.ready === 'true'"));
+      assert.equal(await reopened("document.querySelector('#name').textContent"),'桌面测试角色');
+      await reopened("window.confirm=()=>true;document.querySelector('#remove').click()");
+      await until(() => evaluate("document.querySelector('.mascot-svg').dataset.character === 'blue-one-eye'"));
+      assert.equal(JSON.parse(await readFile(path.join(app.getPath('userData'),'characters-v1.json'),'utf8')).items.length,0);
+      getRuntime().characterWindow.close(); await until(() => !getRuntime().characterWindow);
+    } finally { dialog.showOpenDialog = originalPicker; dialog.showMessageBox = originalMessageBox; }
+  });
   await check("API settings: tray entry, isolated window, encrypted save, reopen and clear", async () => {
     const items = getRuntime().trayMenu.items;
     assert.equal(items[items.findIndex(item => item.id === "quit") - 1].id, "api-settings");
@@ -111,6 +274,92 @@ try {
     assert.deepEqual(structure,baseline);
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.pet')).width"),"84px");
     await writeFile(path.resolve("work/original-idle.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
+  });
+  await check("Character bindings: basic SVG, independent reactions and atomic remount cleanup", async () => {
+    setMode("pet");
+    await until(() => !getRuntime().modeTransition, 7000);
+    await evaluate(`(async () => {
+      const { mountCharacter } = await import('./character.js');
+      const { BASIC_SVG, BLUE_ONE_EYE } = await import('../characters.js');
+      const host = document.createElement('div');
+      host.style.cssText = 'position:absolute;width:84px;height:84px;left:0;top:0';
+      document.body.append(host);
+      const original = document.querySelector('.mascot-svg');
+      const parse = () => document.importNode(new DOMParser().parseFromString(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="20" fill="#ec9640"/></svg>',
+        'image/svg+xml').documentElement, true);
+      const ensure = (value, message) => { if (!value) throw new Error(message); };
+      let first, second;
+      try {
+        first = mountCharacter(host, parse(), BASIC_SVG);
+        first.motion({ gait: 'walk' });
+        const animation = first.svg.getAnimations()[0];
+        ensure(animation, 'generic gait must animate a real SVG without anatomy');
+        await new Promise(resolve => setTimeout(resolve, 90));
+        ensure(new DOMMatrix(getComputedStyle(first.svg).transform).m42 < 0, 'generic gait changes the actual transform');
+        first.motion({ gait: 'walk' });
+        ensure(first.svg.getAnimations()[0] === animation, 'same gait must not restart');
+        first.reset();
+        const before = original.dataset.reaction;
+        first.react('poke');
+        ensure(getComputedStyle(first.svg).animationName === 'poke', 'generic SVG gets the shared reaction');
+        ensure(original.dataset.reaction === before, 'preview reaction must not change the desktop pet');
+        first.react(null);
+        first.motion({ gait: 'run' });
+        let rejected = false;
+        try { mountCharacter(host, parse(), BLUE_ONE_EYE); } catch { rejected = true; }
+        ensure(rejected && host.firstChild === first.svg, 'invalid binding preserves the working character');
+        second = mountCharacter(host, parse(), BASIC_SVG);
+        ensure(first.svg.dataset.active === 'false', 'replaced controller is disposed');
+        first.motion({ gait: 'walk' }); first.react('hop');
+        ensure(first.svg.dataset.reaction === undefined, 'old controller cannot restart a reaction');
+        second.react('hop');
+        ensure(getComputedStyle(second.svg).animationName === 'happy-hop', 'replacement supports reactions');
+        second.destroy();
+        ensure(second.svg.getAnimations().length === 0, 'destroy cancels CSS and JS animation');
+      } finally { first?.destroy(); second?.destroy(); host.remove(); }
+    })()`);
+  });
+  await check("Character motion: reduced preference before creation and live changes for both bindings", async () => {
+    setMode("pet");
+    const win = getRuntime().petWindow;
+    win.webContents.debugger.attach("1.3");
+    const media = value => win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value }],
+    });
+    try {
+      await media("reduce");
+      await evaluate(`(async () => {
+        const { mountCharacter } = await import('./character.js');
+        const { BASIC_SVG, BLUE_ONE_EYE } = await import('../characters.js');
+        const source = await window.bluepet.loadMascot();
+        window.characterFixtures = [];
+        for (const definition of [BLUE_ONE_EYE, BASIC_SVG]) {
+          const host = document.createElement('div');
+          host.style.cssText = 'position:absolute;width:84px;height:84px;left:0;top:0';
+          document.body.append(host);
+          const svg = document.importNode(new DOMParser().parseFromString(
+            definition === BLUE_ONE_EYE ? source : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="20"/></svg>',
+            'image/svg+xml').documentElement, true);
+          const character = mountCharacter(host, svg, definition);
+          window.characterFixtures.push({ host, character });
+          character.motion({ gait: 'run' }); character.react('headpat');
+        }
+      })()`);
+      const animationCounts = () => evaluate("window.characterFixtures.map(({character})=>character.svg.getAnimations({subtree:true}).length)");
+      assert.deepEqual(await animationCounts(), [0, 0], "preference is read at creation");
+      await media("no-preference");
+      await until(async () => (await animationCounts()).every(count => count > 0));
+      await evaluate("window.characterFixtures[0].character.react('shy')");
+      assert.ok(await evaluate("window.characterFixtures[0].character.svg.querySelector('.lid').getAnimations().length > 0"));
+      await media("reduce");
+      await until(async () => (await animationCounts()).every(count => count === 0));
+      assert.equal(await evaluate("new DOMMatrix(getComputedStyle(window.characterFixtures[0].character.svg.querySelector('.lid')).transform).m42"), -20);
+    } finally {
+      await evaluate("window.characterFixtures?.forEach(({host,character})=>{character.destroy();host.remove();});delete window.characterFixtures");
+      await media("no-preference");
+      win.webContents.debugger.detach();
+    }
   });
   await check("Mode inertia: smooth launch, momentum on return/reversal, settling and chat cancellation",async()=>{
     setMode("pet");await until(()=>!getRuntime().modeTransition,7000);
@@ -314,23 +563,25 @@ try {
     // window once it finishes, retaining the duration/open-ratio assertions.
     await until(async()=>await eyeY()===-20,500);
     assert.equal(await eyeY(),-20);
-    let samples=0,closed=0,closedSince=0,longest=0,captured=false;
+    let samples=0,closed=0,closedSince=0,longest=0,captured=false,captureMs=0;
     const start=performance.now();
     while(performance.now()-start<8000) {
       const y=await eyeY(); samples++;
       if(y > -19) {
         closed++; if(!closedSince) closedSince=performance.now();
         if(!captured && y>0) {
+          const captureStart=performance.now();
           await writeFile(path.resolve("work/brief-blink.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
+          captureMs=performance.now()-captureStart;
           captured=true;
         }
       } else if(closedSince) { longest=Math.max(longest,performance.now()-closedSince);closedSince=0; }
       await delay(20);
     }
+    console.log("Eye sampling:", {samples,closed,longest:Math.round(longest),captureMs:Math.round(captureMs)});
     assert.ok(closed>0,"an automatic blink occurs");
     assert.ok(closed/samples<.1,"fully open for over 90% of the time");
     assert.ok(longest<350,"no lingering half-closed lid");
-    console.log("Eye sampling:", {samples,closed,longest:Math.round(longest)});
   });
   await check("system-tinted outline menu-bar icon and plain quit item", async () => {
     const icon = nativeImage.createFromPath(path.resolve("assets/tray.png"));
@@ -513,7 +764,11 @@ try {
     const win=getRuntime().petWindow;
     app.focus({steal:true});win.focus();win.webContents.focus();await delay(120);
     const rect=await evaluate("document.querySelector('.pet').getBoundingClientRect().toJSON()");
+    const bounds=win.getBounds();
     const point={x:Math.round(rect.x+rect.width*.5),y:Math.round(rect.y+rect.height*.75)};
+    // Match the real screen position as the drag tests do. Missing global
+    // coordinates reports (0,0) and can move native focus off the pet on macOS.
+    point.globalX=bounds.x+point.x;point.globalY=bounds.y+point.y;
     await evaluate("window.pointerTrace=[];for(const type of ['pointerdown','pointermove','pointerup','pointercancel','gotpointercapture','lostpointercapture','blur'])window.addEventListener(type,e=>window.pointerTrace.push({type,buttons:e.buttons,x:e.screenX,y:e.screenY}),true)");
     win.webContents.sendInputEvent({type:"mouseMove",...point});
     win.webContents.sendInputEvent({type:"mouseDown",button:"left",clickCount:1,...point});

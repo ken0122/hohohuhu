@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { OPEN_EYE, eyeFrames, blinkDelay, idleDelay } from "../src/renderer/eye-motion.js";
+import { eyeFrames, blinkDelay, idleDelay } from "../src/renderer/eye-motion.js";
+import { BLUE_ONE_EYE } from "../src/characters.js";
+const OPEN_EYE = "translateY(-20px)";
 
 test("blinks and emotions always finish fully open, with no closed-eye hold", () => {
   for (const kind of ["blink", "headpat", "nuzzle", "shy"]) {
-    const frames = eyeFrames(kind);
+    const frames = eyeFrames(kind, BLUE_ONE_EYE.eyes);
     assert.equal(frames[0].transform, OPEN_EYE);
     assert.equal(frames.at(-1).transform, OPEN_EYE);
     assert.equal(frames.length, 3);

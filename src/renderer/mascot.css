@@ -1,28 +1,27 @@
 .mascot-svg { width: 100%; height: 100%; overflow: visible; --gaze-x: 0px; --gaze-y: 0px; }
 /* SVG inline styles are blocked by CSP. Keep the open-eye baseline external. */
-.mascot-svg .lid { transform: translateY(-20px); animation: none; }
-.mascot-svg .mascot { transform-box: fill-box; transform-origin: 50% 100%; }
-.mascot-svg .pupil { transform-box: fill-box; transform-origin: center; transform: translate(-4px,-.3px); transition: transform 220ms ease-out; }
-.mascot-svg[data-looking="true"] .pupil {
+.character-lid { transform: translateY(var(--eye-open)); animation: none; }
+.character-root { transform-box: fill-box; transform-origin: 50% 100%; }
+.mascot-svg .character-pupil { transform-box: fill-box; transform-origin: center; transform: translate(var(--pupil-offset-x),var(--pupil-offset-y)); transition: transform 220ms ease-out; }
+.mascot-svg[data-looking="true"] .character-pupil {
   animation: none;
-  /* Original eye center is (31,29.5), original pupil center is (35,29.8). */
-  transform: translate(calc(var(--gaze-x) - 4px), calc(var(--gaze-y) - .3px));
+  transform: translate(calc(var(--gaze-x) + var(--pupil-offset-x)), calc(var(--gaze-y) + var(--pupil-offset-y)));
   transition: transform 100ms ease-out;
 }
-body[data-reaction="idle-look"] .mascot-svg .pupil { transition-duration: 450ms; }
+.mascot-svg[data-reaction="idle-look"] .character-pupil { transition-duration: 450ms; }
 /* A cursor target changes every frame; tweening it repeatedly leaves the eye lagging. */
-.mascot-svg[data-cursor-gaze="true"] .pupil { transition: none; }
+.mascot-svg[data-cursor-gaze="true"] .character-pupil { transition: none; }
 /* Walking/running affects only the single original body path, never layers. */
-.mascot-svg[data-gait="walk"] .mascot,
-.mascot-svg[data-gait="run"] .mascot { animation: none; }
-body[data-reaction="nuzzle"] .mascot-svg .mascot { animation: nuzzle 1.1s ease-in-out; }
-body[data-reaction="headpat"] .mascot-svg .mascot { animation: headpat 500ms ease-in-out 2; }
-body[data-reaction="hop"] .mascot-svg .mascot { animation: happy-hop 700ms cubic-bezier(.16,1,.3,1); }
-body[data-reaction="shy"] .mascot-svg .mascot { animation: shy 800ms ease-in-out; }
-body[data-reaction="tickle"] .mascot-svg .mascot { animation: tickle 800ms ease-in-out; }
-body[data-reaction="poke"] .mascot-svg .mascot { animation: poke 500ms ease-out; }
-body[data-reaction="cuddle"] .mascot-svg .mascot { animation: cuddle 1.2s ease-in-out; }
-body[data-reaction="idle-stretch"] .mascot-svg .mascot { animation: idle-stretch 1.5s ease-in-out; }
+.mascot-svg[data-gait="walk"] .character-root,
+.mascot-svg[data-gait="run"] .character-root { animation: none; }
+.mascot-svg[data-reaction="nuzzle"] .character-root, .mascot-svg.character-root[data-reaction="nuzzle"] { animation: nuzzle 1.1s ease-in-out; }
+.mascot-svg[data-reaction="headpat"] .character-root, .mascot-svg.character-root[data-reaction="headpat"] { animation: headpat 500ms ease-in-out 2; }
+.mascot-svg[data-reaction="hop"] .character-root, .mascot-svg.character-root[data-reaction="hop"] { animation: happy-hop 700ms cubic-bezier(.16,1,.3,1); }
+.mascot-svg[data-reaction="shy"] .character-root, .mascot-svg.character-root[data-reaction="shy"] { animation: shy 800ms ease-in-out; }
+.mascot-svg[data-reaction="tickle"] .character-root, .mascot-svg.character-root[data-reaction="tickle"] { animation: tickle 800ms ease-in-out; }
+.mascot-svg[data-reaction="poke"] .character-root, .mascot-svg.character-root[data-reaction="poke"] { animation: poke 500ms ease-out; }
+.mascot-svg[data-reaction="cuddle"] .character-root, .mascot-svg.character-root[data-reaction="cuddle"] { animation: cuddle 1.2s ease-in-out; }
+.mascot-svg[data-reaction="idle-stretch"] .character-root, .mascot-svg.character-root[data-reaction="idle-stretch"] { animation: idle-stretch 1.5s ease-in-out; }
 @keyframes nuzzle { 0%,100% { transform: rotate(0); } 35% { transform: rotate(-4deg) translate(-1px,-.5px); } 70% { transform: rotate(3deg) translate(1px,-.5px); } }
 @keyframes headpat { 0%,100% { transform: scale(1); } 50% { transform: scale(1.025,.97) translateY(.5px); } }
 @keyframes happy-hop { 0%,100% { transform: translateY(0); } 20% { transform: scale(1.1,.85); } 50% { transform: translateY(-9px) scale(.95,1.05); } 80% { transform: translateY(0) scale(1.06,.94); } }
@@ -31,7 +30,7 @@ body[data-reaction="idle-stretch"] .mascot-svg .mascot { animation: idle-stretch
 @keyframes poke { 0%,100% { transform: scale(1); } 28% { transform: translateY(1px) scale(1.07,.93); } 65% { transform: scale(.99,1.02); } }
 @keyframes cuddle { 0%,100% { transform: rotate(0) scale(1); } 35%,65% { transform: rotate(-4deg) scale(1.035,.97); } }
 @keyframes idle-stretch { 0%,100% { transform: scale(1) rotate(0); } 40% { transform: scale(.985,1.025) rotate(-1.5deg); } 70% { transform: scale(1.01,.995) rotate(1deg); } }
-body.is-paused .mascot-svg *, body.is-paused .affection span { animation-play-state: paused !important; }
+.mascot-svg[data-active="false"], .mascot-svg[data-active="false"] *, body.is-paused .mascot-svg *, body.is-paused .affection span { animation-play-state: paused !important; }
 @media (prefers-reduced-motion: reduce) {
-  .mascot-svg *, body[data-reaction] .mascot-svg .mascot, body[data-reaction] .mascot-svg .lid { animation: none !important; transition: none !important; }
+  .mascot-svg, .mascot-svg * { animation: none !important; transition: none !important; }
 }

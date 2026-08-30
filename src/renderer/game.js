@@ -5,6 +5,7 @@ const canvas = document.querySelector("#game");
 const context = canvas.getContext("2d");
 const spriteHost = document.querySelector("#game-pet");
 const sprite = await createMascot(spriteHost, { eyelids: false });
+window.addEventListener("pagehide", () => sprite.destroy(), { once: true });
 const hideEffect = await installHideEffect(spriteHost, () => sprite.setActive(false));
 window.bluepet.onHideCancel(() => sprite.setActive(true));
 const scoreElement = document.querySelector("#score");

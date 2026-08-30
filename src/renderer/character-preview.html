@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+    <title>黑猫 · SVG 转换预览</title>
+    <link rel="stylesheet" href="mascot.css" />
+    <link rel="stylesheet" href="character-preview.css" />
+    <script type="module" src="character-preview.js"></script>
+  </head>
+  <body>
+    <header>
+      <p class="eyebrow">角色转换样本 / 01</p>
+      <h1>黑猫，从一张图开始。</h1>
+      <p>本地单色转换与通用动作预览。不会替换当前桌面宠物。</p>
+    </header>
+    <main>
+      <section class="source">
+        <h2>原图</h2>
+        <div class="image-frame"><img src="../../assets/characters/black-cat/source.png" alt="用户提供的白底黑猫原图" /></div>
+        <p>400 × 300 · 原文件保留</p>
+      </section>
+      <section>
+        <h2>静态 SVG + 动作控制</h2>
+        <div class="image-frame checker"><div id="large" class="large character-host"></div></div>
+        <p>透明背景 · 保留两只白眼 · 不补画部件</p>
+      </section>
+      <section class="sizes">
+        <h2>实际使用尺寸</h2>
+        <div class="size-examples">
+          <div><div id="desktop" class="desktop character-host"></div><p>桌面 84px</p></div>
+          <div><div id="game" class="game character-host"></div><p>游戏 64px</p></div>
+        </div>
+        <p>三个预览共用应用的动作控制器。</p>
+      </section>
+    </main>
+    <fieldset id="controls" disabled>
+      <legend>试试动作</legend>
+      <button data-gait="idle">静止</button>
+      <button data-gait="walk">行走</button>
+      <button data-gait="run">奔跑</button>
+      <button data-reaction="hop">轻跳</button>
+      <button data-reaction="poke">戳一下</button>
+      <button id="pause">暂停</button>
+      <button id="resume">恢复</button>
+    </fieldset>
+    <p id="status" role="status">正在加载本地样本…</p>
+    <footer>当前只支持白底或透明底的深色单色图。未进行眼睛或尾巴识别，尚未开放用户文件导入。</footer>
+  </body>
+</html>

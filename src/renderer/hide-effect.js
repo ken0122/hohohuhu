@@ -1,21 +1,32 @@
 // Rasterize a runtime clone, never modify the source mascot. All pixels stay local.
 export async function installHideEffect(host, onHide = () => {}) {
+  let image, imageReady=false, particles=[], version=0;
+  async function refresh() {
+  const generation=++version;
+  imageReady=false;
   const clone=host.querySelector("svg").cloneNode(true);
-  clone.querySelectorAll("style,.lid").forEach(node=>node.remove());
-  const image=new Image();
-  image.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(new XMLSerializer().serializeToString(clone));
-  const imageReady=await image.decode().then(()=>true,()=>false);
+  clone.querySelectorAll("style,.character-lid").forEach(node=>node.remove());
+  const nextImage=new Image();
+  nextImage.src="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(new XMLSerializer().serializeToString(clone));
+  const ready=await nextImage.decode().then(()=>true,()=>false);
+  if(generation!==version)return;
+  image=nextImage;imageReady=ready;
   const sample=document.createElement("canvas");sample.width=sample.height=64;
   const source=sample.getContext("2d",{willReadFrequently:true});
   if(imageReady)source.drawImage(image,0,0,64,64);
   const pixels=source.getImageData(0,0,64,64).data;
-  const particles=[];
+  particles=[];
   for(let y=1;y<64;y+=3)for(let x=1;x<64;x+=3) {
     const i=(y*64+x)*4;
     if(pixels[i+3]<80)continue;
     particles.push({x,y,color:`rgb(${pixels[i]} ${pixels[i+1]} ${pixels[i+2]})`,
       angle:Math.atan2(y-32,x-32)+(x%5-.5)*.12,travel:8+(x*7+y*11)%17});
   }
+  host.dataset.hideCharacter=host.querySelector("svg").dataset.character;
+  }
+  host.addEventListener("character-mounted",refresh);
+  await refresh();
+  window.addEventListener("pagehide",()=>{++version;host.removeEventListener("character-mounted",refresh);},{once:true});
   const canvas=document.createElement("canvas");
   canvas.className="hide-particles";canvas.setAttribute("aria-hidden","true");document.body.append(canvas);
   const context=canvas.getContext("2d");

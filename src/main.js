@@ -32,8 +32,10 @@ import {
   validDragPoint,
   dragPosition,
 } from "./core.js";
+import { BLUE_ONE_EYE, characterDefinition } from "./characters.js";
 import { transitionState } from "./app-state.js";
 import { createApiSettingsStore } from "./api-settings.js";
+import { createCharacterLibrary } from "./character-library.js";
 import { loadChatProvider } from "./chat-provider.js";
 import { askClaude } from "./chat.js";
 import { createDodgeMotion } from "./dodge.js";
@@ -50,7 +52,8 @@ const requestedMode = normalizeMode(
 );
 const initialMode = Object.values(MODES).includes(requestedMode) ? requestedMode : MODES.DODGE;
 const state = { mode: initialMode, manualHidden: false, chatOpen: false, controlActive: false };
-let petWindow, gameWindow, settingsWindow, apiSettingsStore, tray, trayMenu, loop;
+let petWindow, gameWindow, settingsWindow, apiSettingsStore, characterLibrary, tray, trayMenu, loop;
+let selectedCharacter = BLUE_ONE_EYE;
 let petReady = false,
   gameReady = false,
   quitting = false,
@@ -102,16 +105,16 @@ function send(channel, payload) {
     petWindow.webContents.send(channel, payload);
 }
 function sendPetMotion(motion, cursor = screen.getCursorScreenPoint()) {
-  if (state.mode === MODES.DODGE && petReady && petWindow && !petWindow.isDestroyed()) {
+  if (state.mode === MODES.DODGE && selectedCharacter.gaze && petReady && petWindow && !petWindow.isDestroyed()) {
     const frame = petWindow.getBounds();
-    // SVG eye center (31, 29.5), mapped into the actual native frame.
+    // Selected character's gaze anchor, mapped into the actual native frame.
     // Gaze is independent of escape velocity, including when chat/menu freezes movement.
     motion = {
       ...motion,
       gaze: {
-        x: cursor.x - (frame.x + (frame.width - PET_SPRITE_SIZE) / 2 + (31 / 64) * PET_SPRITE_SIZE),
+        x: cursor.x - (frame.x + (frame.width - PET_SPRITE_SIZE) / 2 + selectedCharacter.gaze.x * PET_SPRITE_SIZE),
         y:
-          cursor.y - (frame.y + frame.height - 7 - PET_SPRITE_SIZE + (29.5 / 64) * PET_SPRITE_SIZE),
+          cursor.y - (frame.y + frame.height - 7 - PET_SPRITE_SIZE + selectedCharacter.gaze.y * PET_SPRITE_SIZE),
       },
     };
   }
@@ -690,6 +693,7 @@ function rebuildTrayMenu() {
       enabled: app.isPackaged,
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
     },
+    { id: "characters", label: "角色库…", click: () => characterLibrary.show() },
     { id: "api-settings", label: "API 设置…", click: showApiSettings },
     { id: "quit", label: "退出呼噜呼噜", click: () => app.quit() },
   ]);
@@ -720,11 +724,16 @@ function registerShortcut(accelerator, handler, label) {
       }).show();
   }
 }
-const mascotSource = readFileSync(path.join(dirname, "../assets/blue-one-eye-mascot.svg"), "utf8");
+const mascotSource = readFileSync(path.join(dirname, "../assets", BLUE_ONE_EYE.asset), "utf8");
 ipcMain.handle("mascot:source", (event) => {
-  if (event.sender !== petWindow?.webContents && event.sender !== gameWindow?.webContents)
+  if ((event.sender !== petWindow?.webContents && event.sender !== gameWindow?.webContents) || event.senderFrame !== event.sender.mainFrame)
     throw new Error("Invalid sender");
   return mascotSource;
+});
+ipcMain.handle("character:source", event => {
+  if ((event.sender !== petWindow?.webContents && event.sender !== gameWindow?.webContents) || event.senderFrame !== event.sender.mainFrame)
+    throw new Error("Invalid sender");
+  return characterLibrary.source();
 });
 ipcMain.on("pet:ready", (event) => {
   if (fromPet(event)) {
@@ -776,7 +785,7 @@ app.on("second-instance", (_event, argv) => {
     rebuildTrayMenu();
   }
 });
-export const ready = app.whenReady().then(() => {
+export const ready = app.whenReady().then(async () => {
   if (!hasLock) return;
   if (process.platform === "darwin") app.dock.hide();
   Menu.setApplicationMenu(null);
@@ -784,6 +793,17 @@ export const ready = app.whenReady().then(() => {
     directory: app.getPath("userData"),
     secureStorage: safeStorage,
   });
+  characterLibrary = await createCharacterLibrary({
+    directory: app.getPath("userData"),
+    bindEditingShortcuts,
+    onOpen: () => interruptInteraction({ preserveMotion: true }),
+    shouldForceClose: () => quitting,
+    onChange: () => {
+      selectedCharacter = characterDefinition(characterLibrary.source().id);
+      for (const win of [petWindow, gameWindow]) if (win && !win.isDestroyed()) win.webContents.send("character:changed");
+    },
+  });
+  selectedCharacter = characterDefinition(characterLibrary.source().id);
   pinPet();
   createPetWindow();
   const trayImage = nativeImage.createFromPath(path.join(dirname, "../assets/tray.png"));
@@ -836,6 +856,7 @@ export function getRuntime() {
     petWindow,
     gameWindow,
     settingsWindow,
+    characterWindow: characterLibrary?.window,
     tray,
     trayMenu,
     menuOpen,
