@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 const exec=promisify(execFile);
 export const CHAT_MODEL="deepseek-v4-flash";
+export const CHARACTER_VISION_MODEL="deepseek-v4-flash-vision-exp";
 
 export function deepseekCredentials(env={}) {
   // Never mix a provider's key with another provider's URL.

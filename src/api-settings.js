@@ -9,7 +9,7 @@ export function validateApiSettings(value, previous) {
   let url;
   try { url = new URL(value.baseUrl.trim()); } catch { throw new Error("Base URL 格式不正确。"); }
   if (url.protocol !== "https:" || url.host !== "api.deepseek.com" || url.username || url.password || url.search || url.hash || !["/", "/anthropic", "/anthropic/"].includes(url.pathname))
-    throw new Error("仅支持 https://api.deepseek.com 或其 /anthropic 地址。");
+    throw new Error("只支持 DeepSeek 官方地址：https://api.deepseek.com（可带 /anthropic）。");
   const key = value.apiKey.trim() || previous?.key;
   if (!key || /[\s\x00-\x1f\x7f]/.test(key)) throw new Error("请输入有效的 API Key；不能包含空白字符。");
   return { baseUrl: DEFAULT_BASE_URL, key };

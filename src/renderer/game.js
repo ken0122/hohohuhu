@@ -19,6 +19,7 @@ const speedElement = document.querySelector("#speed");
 document.documentElement.style.setProperty("--game-hud-height", `${GAME_HUD_HEIGHT}px`);
 spriteHost.style.width = spriteHost.style.height = `${pet.size}px`;
 let previousTime = performance.now();
+let pointer;
 
 function resize() {
   const ratio = Math.min(window.devicePixelRatio || 1, 2);
@@ -74,7 +75,12 @@ function draw(time) {
   context.shadowBlur = 0;
   const scale = 1 + game.pulse * 0.12;
   spriteHost.style.transform = `translate(${pet.x - pet.size / 2}px, ${pet.y - pet.size / 2}px) scale(${scale})`;
-  sprite.motion({ x: pet.vx, y: pet.vy, gait: pet.vx || pet.vy ? "run" : "idle" });
+  sprite.motion({
+    x: pet.vx,
+    y: pet.vy,
+    gait: pet.vx || pet.vy ? "run" : "idle",
+    gaze: pointer ? { x: pointer.x - pet.x, y: pointer.y - pet.y } : undefined,
+  });
 }
 
 function frame(time) {
@@ -92,6 +98,7 @@ document.addEventListener("visibilitychange", () =>
   document.body.classList.toggle("is-paused", document.hidden),
 );
 window.addEventListener("keydown", handleKey);
+window.addEventListener("pointermove", event => { pointer = { x: event.clientX, y: event.clientY }; });
 exitButton.addEventListener("click", () => window.bluepet.exitGame());
 resize();
 showLevelMessage("慢慢来，沿着豆豆走。");

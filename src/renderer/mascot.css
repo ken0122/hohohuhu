@@ -1,6 +1,7 @@
 .mascot-svg { width: 100%; height: 100%; overflow: visible; --gaze-x: 0px; --gaze-y: 0px; }
 /* SVG inline styles are blocked by CSP. Keep the open-eye baseline external. */
 .character-lid { transform: translateY(var(--eye-open)); animation: none; }
+.character-facing { transform-box: fill-box; transform-origin: center; transform: scaleX(var(--facing, 1)); }
 .character-root { transform-box: fill-box; transform-origin: 50% 100%; }
 .mascot-svg .character-pupil { transform-box: fill-box; transform-origin: center; transform: translate(var(--pupil-offset-x),var(--pupil-offset-y)); transition: transform 220ms ease-out; }
 .mascot-svg[data-looking="true"] .character-pupil {
@@ -9,6 +10,16 @@
   transition: transform 100ms ease-out;
 }
 .mascot-svg[data-reaction="idle-look"] .character-pupil { transition-duration: 450ms; }
+.mascot-svg[data-reaction="headpat"] .character-root,
+.mascot-svg[data-reaction="shy"] .character-root,
+.mascot-svg.character-root[data-reaction="headpat"],
+.mascot-svg.character-root[data-reaction="shy"] { transform-origin: var(--head-origin-x) var(--head-origin-y); }
+.mascot-svg[data-reaction="tickle"] .character-root,
+.mascot-svg[data-reaction="poke"] .character-root,
+.mascot-svg[data-reaction="cuddle"] .character-root,
+.mascot-svg.character-root[data-reaction="tickle"],
+.mascot-svg.character-root[data-reaction="poke"],
+.mascot-svg.character-root[data-reaction="cuddle"] { transform-origin: var(--body-origin-x) var(--body-origin-y); }
 /* A cursor target changes every frame; tweening it repeatedly leaves the eye lagging. */
 .mascot-svg[data-cursor-gaze="true"] .character-pupil { transition: none; }
 /* Walking/running affects only the single original body path, never layers. */
@@ -22,6 +33,11 @@
 .mascot-svg[data-reaction="poke"] .character-root, .mascot-svg.character-root[data-reaction="poke"] { animation: poke 500ms ease-out; }
 .mascot-svg[data-reaction="cuddle"] .character-root, .mascot-svg.character-root[data-reaction="cuddle"] { animation: cuddle 1.2s ease-in-out; }
 .mascot-svg[data-reaction="idle-stretch"] .character-root, .mascot-svg.character-root[data-reaction="idle-stretch"] { animation: idle-stretch 1.5s ease-in-out; }
+.mascot-svg[data-character="blue-one-eye"][data-reaction="blue-secret"] .character-root { animation: blue-secret 1.1s cubic-bezier(.16,1,.3,1); }
+.mascot-svg[data-reaction="cat-secret"] .character-root,
+.mascot-svg.character-root[data-reaction="cat-secret"] { animation: cat-secret 1.5s cubic-bezier(.16,1,.3,1); }
+.mascot-svg[data-reaction="sunny-secret"] .character-root,
+.mascot-svg.character-root[data-reaction="sunny-secret"] { animation: sunny-secret 1.2s cubic-bezier(.16,1,.3,1); }
 @keyframes nuzzle { 0%,100% { transform: rotate(0); } 35% { transform: rotate(-4deg) translate(-1px,-.5px); } 70% { transform: rotate(3deg) translate(1px,-.5px); } }
 @keyframes headpat { 0%,100% { transform: scale(1); } 50% { transform: scale(1.025,.97) translateY(.5px); } }
 @keyframes happy-hop { 0%,100% { transform: translateY(0); } 20% { transform: scale(1.1,.85); } 50% { transform: translateY(-9px) scale(.95,1.05); } 80% { transform: translateY(0) scale(1.06,.94); } }
@@ -30,6 +46,9 @@
 @keyframes poke { 0%,100% { transform: scale(1); } 28% { transform: translateY(1px) scale(1.07,.93); } 65% { transform: scale(.99,1.02); } }
 @keyframes cuddle { 0%,100% { transform: rotate(0) scale(1); } 35%,65% { transform: rotate(-4deg) scale(1.035,.97); } }
 @keyframes idle-stretch { 0%,100% { transform: scale(1) rotate(0); } 40% { transform: scale(.985,1.025) rotate(-1.5deg); } 70% { transform: scale(1.01,.995) rotate(1deg); } }
+@keyframes blue-secret { 0%,100% { transform: scale(1); } 32% { transform: translateY(1px) scale(1.04,.96); } 72% { transform: translateY(-2px) scale(.98,1.02); } }
+@keyframes cat-secret { 0%,42% { transform: scale(1); } 48% { transform: scale(1.08,.86); } 68% { transform: translateY(-10px) rotate(-3deg) scale(.96,1.04); } 84% { transform: translateY(0) scale(1.05,.95); } 100% { transform: scale(1); } }
+@keyframes sunny-secret { 0%,100% { transform: translateY(0) rotate(0) scale(1); } 18% { transform: scale(1.08,.9); } 38% { transform: translateY(-7px) rotate(-4deg) scale(.96,1.05); } 58% { transform: translateY(0) rotate(2deg) scale(1.06,.94); } 74% { transform: translateY(-4px) rotate(3deg) scale(.98,1.03); } 90% { transform: translateY(0) scale(1.03,.97); } }
 .mascot-svg[data-active="false"], .mascot-svg[data-active="false"] *, body.is-paused .mascot-svg *, body.is-paused .affection span { animation-play-state: paused !important; }
 @media (prefers-reduced-motion: reduce) {
   .mascot-svg, .mascot-svg * { animation: none !important; transition: none !important; }

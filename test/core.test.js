@@ -12,6 +12,8 @@ import {
   gazeDirection,
   MODES,
   petShouldShow,
+  petShouldAvoid,
+  cursorInPetSprite,
   normalizeMode,
   nextMode,
 } from "../src/core.js";
@@ -95,6 +97,19 @@ test("Dodge stays visible unless manually hidden", () => {
     assert.equal(petShouldShow({ mode, manualHidden: true }), false);
   }
   assert.equal(petShouldShow({ mode: MODES.PACMAN, manualHidden: false }), false);
+});
+test("Pet avoids only while idle and outside the interaction surface", () => {
+  assert.equal(petShouldAvoid({ mode: MODES.PET, chatOpen: false, manualControl: false, hovered: false }), true);
+  for (const changed of [{ mode: MODES.DODGE }, { chatOpen: true }, { manualControl: true }, { hovered: true }]) {
+    assert.equal(petShouldAvoid({ mode: MODES.PET, chatOpen: false, manualControl: false, hovered: false, ...changed }), false);
+  }
+});
+test("native Pet avoidance stops at the visible 84px interaction box", () => {
+  const position = { x: 100, y: 200 };
+  assert.equal(cursorInPetSprite({ x: 124, y: 241 }, position), true);
+  assert.equal(cursorInPetSprite({ x: 208, y: 325 }, position), true);
+  assert.equal(cursorInPetSprite({ x: 123, y: 241 }, position), false);
+  assert.equal(cursorInPetSprite({ x: 124, y: 240 }, position), false);
 });
 test("recovery clamps detached/negative displays and tiny work areas", () => {
   assert.deepEqual(fitPet({ x: -5000, y: 8000 }, { x: -1920, y: 0, width: 1920, height: 1080 }), {

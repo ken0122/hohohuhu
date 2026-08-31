@@ -1,6 +1,7 @@
 import { characterDefinition } from "../characters.js";
 import { validateGeneratedSvg } from "../character-import.js";
 import { mountCharacter } from "./character.js";
+import { deriveImportedEyeRig } from "./imported-eye-rig.js";
 
 // Stable facade: swapping artwork never reloads the game/chat or native window.
 export async function createMascot(host, { eyelids = true } = {}) {
@@ -9,8 +10,10 @@ export async function createMascot(host, { eyelids = true } = {}) {
     const version = ++serial;
     const entry = await window.bluepet.loadCharacter();
     if (destroyed || version !== serial) return;
-    const definition = characterDefinition(entry.id);
     if (!entry.builtin) validateGeneratedSvg(entry.svg);
+    const eyeRig = entry.builtin ? null : await deriveImportedEyeRig(entry.svg, entry.analysis?.parts);
+    if (destroyed || version !== serial) return;
+    const definition = characterDefinition(entry.id, entry.profile, entry.analysis, eyeRig);
     const parsed = new DOMParser().parseFromString(entry.svg, "image/svg+xml");
     if (parsed.querySelector("parsererror")) throw new Error("Invalid character SVG");
     const svg = document.importNode(parsed.documentElement, true);

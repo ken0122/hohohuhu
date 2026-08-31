@@ -9,7 +9,7 @@ function render(value) {
   configured = value.configured;
   baseUrl.value = value.baseUrl;
   apiKey.value = "";
-  apiKey.placeholder = configured ? "已保存；留空保留，输入新密钥替换" : "输入你的 DeepSeek API Key";
+  apiKey.placeholder = configured ? "已保存，留空不变" : "粘贴 DeepSeek API Key";
   apiKey.required = !configured;
   clear.disabled = !configured;
 }
@@ -20,7 +20,7 @@ async function perform(action, success) {
     if (!result.ok) throw new Error(result.error);
     render(result.value);
     status.dataset.error = "false";
-    status.textContent = success || (configured ? "正在使用本机配置。已保存的密钥不会显示。" : "未保存本机配置；聊天会自动查找现有 provider。");
+    status.textContent = success || (configured ? "正在使用这台 Mac 保存的配置。" : "没有单独配置，将尝试使用本机现有配置。");
   } catch (error) {
     status.dataset.error = "true";
     status.textContent = error.message || "操作失败，请重试。";
@@ -31,11 +31,11 @@ form.addEventListener("submit", event => {
   event.preventDefault();
   const value = { baseUrl: baseUrl.value, apiKey: apiKey.value };
   apiKey.value = "";
-  perform(() => window.apiSettings.save(value), "已保存，下次聊天立即生效。尚未测试连接。");
+  perform(() => window.apiSettings.save(value), "已保存，下次聊天生效。尚未测试连接。");
 });
 clear.addEventListener("click", () => {
-  if (window.confirm("清除呼噜呼噜保存的 API 配置？之后将自动查找现有 provider。"))
-    perform(() => window.apiSettings.clear(), "已清除本机配置，恢复自动查找 provider。");
+  if (window.confirm("清除聊天配置？之后会改用本机现有配置。"))
+    perform(() => window.apiSettings.clear(), "已清除，将使用本机现有配置。");
 });
 document.querySelector("#cancel").addEventListener("click", () => window.apiSettings.close());
 document.addEventListener("keydown", event => { if (event.key === "Escape") window.apiSettings.close(); });

@@ -2,14 +2,14 @@ import { BrowserWindow, dialog, ipcMain } from "electron";
 import { open, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { BLUE_ONE_EYE, BLACK_CAT } from "./characters.js";
+import { BLUE_ONE_EYE, BLACK_CAT, SUNNY_YELLOW } from "./characters.js";
 import { inspectCharacterImage, MAX_IMAGE_BYTES } from "./character-import.js";
 import { createCharacterStore } from "./character-store.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
-export async function createCharacterLibrary({ directory, onChange, onOpen, bindEditingShortcuts, shouldForceClose = () => false }) {
+export async function createCharacterLibrary({ directory, onChange, onOpen, bindEditingShortcuts, analyzeImage, shouldForceClose = () => false }) {
   const store = await createCharacterStore(directory);
-  const sources = new Map(await Promise.all([BLUE_ONE_EYE, BLACK_CAT].map(async definition => [
+  const sources = new Map(await Promise.all([BLUE_ONE_EYE, BLACK_CAT, SUNNY_YELLOW].map(async definition => [
     definition.id, await readFile(path.join(dirname, "../assets", definition.asset), "utf8"),
   ])));
   let window, choosing = false, dirty = false, closingPrompt = false, forceClose = false;
@@ -23,7 +23,13 @@ export async function createCharacterLibrary({ directory, onChange, onOpen, bind
     choosing = true;
     const owner = window;
     try {
-      const result = await dialog.showOpenDialog(owner, { title: "导入角色图片", properties: ["openFile"], filters: [{ name: "PNG / JPG", extensions: ["png", "jpg", "jpeg"] }] });
+      const result = await dialog.showOpenDialog(owner, {
+        title: "添加角色",
+        message: "图片会发给 DeepSeek，用来分析角色气质和互动部件。保存后会新增角色，不会覆盖当前角色。",
+        buttonLabel: "选图并分析",
+        properties: ["openFile"],
+        filters: [{ name: "PNG / JPG", extensions: ["png", "jpg", "jpeg"] }],
+      });
       if (result.canceled || !result.filePaths[0] || owner.isDestroyed()) return null;
       const handle = await open(result.filePaths[0], "r");
       let bytes;
@@ -41,8 +47,10 @@ export async function createCharacterLibrary({ directory, onChange, onOpen, bind
   const handlers = {
     list: () => store.catalog(), source,
     choose: chooseImage,
+    analyze: value => analyzeImage(value),
     async select(id) { const value = await store.select(id); onChange(); return value; },
     async import(value) { const result = await store.import(value); onChange(); return result; },
+    async update(value) { const result = await store.update(value?.id, value); onChange(); return result; },
     async remove(id) { const result = await store.remove(id); onChange(); return result; },
   };
   for (const [name, handle] of Object.entries(handlers)) ipcMain.handle("characters:" + name, async (event, value) => {
@@ -59,11 +67,10 @@ export async function createCharacterLibrary({ directory, onChange, onOpen, bind
       onOpen();
       if (window && !window.isDestroyed()) { window.show(); window.focus(); return; }
       const win = window = new BrowserWindow({
-        title: "角色库 · 呼噜呼噜", width: 820, height: 800, minWidth: 720, minHeight: 620,
+        title: "角色 · 呼噜呼噜", width: 820, height: 800, minWidth: 720, minHeight: 620,
         backgroundColor: "#fbfcff", show: false,
         webPreferences: { preload: path.join(dirname, "character-preload.cjs"), sandbox: true, contextIsolation: true, nodeIntegration: false },
       });
-      win.setAlwaysOnTop(true, "screen-saver", 1);
       bindEditingShortcuts(win);
       win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       win.webContents.on("will-navigate", event => event.preventDefault());
@@ -74,8 +81,8 @@ export async function createCharacterLibrary({ directory, onChange, onOpen, bind
         if (closingPrompt) return;
         closingPrompt = true;
         dialog.showMessageBox(win, {
-          type: "warning", title: "放弃这次导入？", message: "这个角色还没有保存。",
-          detail: "继续编辑可以保留当前预览；放弃后需要重新选择图片并转换。",
+          type: "warning", title: "放弃修改？", message: "这些改动还没保存。",
+          detail: "继续编辑会保留当前内容；放弃后无法恢复。",
           buttons: ["继续编辑", "放弃并关闭"], defaultId: 0, cancelId: 0,
         }).then(({ response }) => {
           closingPrompt = false;

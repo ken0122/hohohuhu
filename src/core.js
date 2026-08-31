@@ -96,6 +96,17 @@ export function petShouldShow({ mode, manualHidden }) {
   return !manualHidden && mode !== MODES.PACMAN;
 }
 
+export function petShouldAvoid({ mode, chatOpen, manualControl, hovered }) {
+  return mode === MODES.PET && !chatOpen && !manualControl && !hovered;
+}
+
+export function cursorInPetSprite(cursor, position) {
+  const left = position.x + (PET_FRAME_SIZE - PET_SPRITE_SIZE) / 2;
+  const top = position.y + PET_FRAME_SIZE - 7 - PET_SPRITE_SIZE;
+  return cursor.x >= left && cursor.x <= left + PET_SPRITE_SIZE
+    && cursor.y >= top && cursor.y <= top + PET_SPRITE_SIZE;
+}
+
 export function limitUnicode(text, maxLength = 50) {
   const normalized = String(text).trim();
   const segmenter =

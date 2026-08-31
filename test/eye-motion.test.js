@@ -13,6 +13,11 @@ test("blinks and emotions always finish fully open, with no closed-eye hold", ()
     assert.equal(frames[1].offset, .36);
     assert.notEqual(frames[1].transform, OPEN_EYE);
   }
+  const secret = eyeFrames("blue-secret", BLUE_ONE_EYE.eyes);
+  assert.equal(secret.length, 5);
+  assert.equal(secret[0].transform, OPEN_EYE);
+  assert.equal(secret.at(-1).transform, OPEN_EYE);
+  assert.equal(secret.filter(frame => frame.transform !== OPEN_EYE).length, 2);
 });
 test("autonomous motions have long quiet gaps and variable timing", () => {
   assert.equal(blinkDelay(() => 0), 3800);

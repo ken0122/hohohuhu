@@ -51,11 +51,24 @@ export function inspectCharacterImage(bytes) {
 // Accept only our generator's exact two-path grammar, never arbitrary SVG.
 // No XML entities, styles, URLs, event handlers, images or supplied selectors.
 export function validateGeneratedSvg(svg) {
-  if (typeof svg !== "string" || svg.length > 500000) throw new Error("角色路径无效或过于复杂。");
+  if (typeof svg !== "string" || svg.length > 750000) throw new Error("角色素材无效或过于复杂。");
   const prefix = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">\n';
   if (!svg.startsWith(prefix) || !svg.endsWith('</svg>\n')) throw new Error("角色格式无效。");
   const lines = svg.slice(prefix.length, -7).split('\n');
-  if (lines.pop() !== "" || lines.length < 1 || lines.length > 2) throw new Error("角色路径无效。");
+  if (lines.pop() !== "" || lines.length < 1 || lines.length > 2) throw new Error("角色素材无效。");
+  if (lines.length === 1) {
+    const raster = /^  <image href="data:image\/png;base64,([A-Za-z0-9+/]+={0,2})" x="0" y="0" width="64" height="64" preserveAspectRatio="xMidYMid meet"\/>$/.exec(lines[0]);
+    if (raster) {
+      if (raster[1].length > 700000 || !raster[1].startsWith("iVBORw0KGgo")) throw new Error("角色位图无效或过大。");
+      let binary;
+      try { binary = atob(raster[1]); } catch { throw new Error("角色位图无法读取。"); }
+      if (binary.length < 24 || [137,80,78,71,13,10,26,10].some((byte, index) => binary.charCodeAt(index) !== byte)) {
+        throw new Error("角色位图不是有效 PNG。");
+      }
+      inspectCharacterImage(Uint8Array.from(binary, character => character.charCodeAt(0)));
+      return svg;
+    }
+  }
   for (const line of lines) {
     const match = /^  <path d="([MLQZ0-9., -]+)" fill="(#[0-9a-f]{6})" fill-rule="evenodd"\/>$/.exec(line);
     if (!match || !match[1].startsWith("M") || !match[1].endsWith("Z")) throw new Error("角色路径无效。");

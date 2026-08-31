@@ -1,6 +1,6 @@
 import { createMascot } from "./mascot.js";
 import { idleDelay } from "./eye-motion.js";
-import { REACTIONS, clickReaction, createStrokeGesture } from "./pet-interactions.js";
+import { clickReaction, createInteractionPolicy, createStrokeGesture } from "./pet-interactions.js";
 import { createPetDrag } from "./pet-drag.js";
 import { installHideEffect } from "./hide-effect.js";
 const body = document.body;
@@ -14,10 +14,14 @@ const pet = document.querySelector("#pet");
 const hint = document.querySelector("#pet-hint");
 const characterHost = document.querySelector("#character");
 const character = await createMascot(characterHost);
+const interaction = createInteractionPolicy(() => character.definition);
 const affectionSymbols = Array.from(document.querySelectorAll(".affection span"));
 function applyCharacterPresentation() {
-  const { id, affection } = character.definition;
+  const { id, affection, profile } = character.definition;
   body.dataset.character = id;
+  const identity = profile?.persona?.identity || "桌面宠物";
+  document.querySelector(".desktop-pet")?.setAttribute("aria-label", identity);
+  pet.setAttribute("aria-label", `和${identity}互动`);
   affectionSymbols.forEach((symbol, index) => { symbol.textContent = affection.symbols[index]; });
   body.style.setProperty("--affection-color", affection.color);
   body.style.setProperty("--affection-shadow", affection.shadow);
@@ -28,10 +32,8 @@ window.addEventListener("pagehide", () => character.destroy(), { once: true });
 let mode = "dodge", chatOpen = false, near = false, pending = false;
 let reactionTimer, hintTimer, hoverTimer, lastReaction = 0;
 let moving = false, holdTimer, pressPoint, suppressClick = false;
-const gesture = createStrokeGesture();
-const reactionCounts = {};
+const gesture = createStrokeGesture({ getParts: () => character.definition.interactionParts || [] });
 let visible = false, hovering = false, idleTimer, idleFinish, idleCount = 0;
-let lastReactionKind;
 let dragging = false;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 const hideEffect=await installHideEffect(pet,()=>{
@@ -63,40 +65,46 @@ function scheduleIdle() {
   if (idleTimer || idleFinish || mode !== "pet" || !visible || document.hidden || chatOpen || moving || drag.pressed || near || hovering || reduced.matches || body.dataset.reaction) return;
   idleTimer = setTimeout(() => {
     idleTimer = undefined;
-    body.dataset.reaction = ++idleCount % 2 ? "idle-look" : "idle-stretch";
-    character.react(body.dataset.reaction);
-    if (body.dataset.reaction === "idle-look") character.motion({ x: idleCount % 4 === 1 ? -1 : 1, y: -.2 });
+    const idle = interaction.idle();
+    body.dataset.reaction = idle.kind;
+    character.react(idle.kind);
+    if (idle.kind === "idle-look") character.motion({ x: ++idleCount % 2 ? -1 : 1, y: -.2 });
     idleFinish = setTimeout(() => {
       idleFinish = undefined;
       delete body.dataset.reaction; character.reset(); scheduleIdle();
-    }, 1500);
+    }, idle.duration);
   }, idleDelay());
 }
 document.addEventListener("visibilitychange", () => { stopIdle(); scheduleIdle(); });
 reduced.addEventListener("change", () => { stopIdle(); scheduleIdle(); });
 
-function react(kind, message) {
+function playReaction(selected) {
   if (mode !== "pet" || chatOpen || !visible || moving || dragging) return;
-  if (lastReactionKind === kind && performance.now() - lastReaction < 1800) return;
+  if (!selected) return;
   stopIdle();
   clearTimeout(reactionTimer);
   clearTimeout(hintTimer);
   clearTimeout(hoverTimer);
-  body.dataset.reaction = kind;
+  body.dataset.reaction = selected.kind;
   lastReaction = performance.now();
-  lastReactionKind = kind;
-  character.react(kind);
-  const { duration, messages } = REACTIONS[kind];
-  const count = reactionCounts[kind] || 0;
-  hint.textContent = message || messages[count % messages.length];
-  reactionCounts[kind] = count + 1;
-  reactionTimer = setTimeout(() => { delete body.dataset.reaction; character.react(null); hint.textContent = ""; scheduleIdle(); }, duration);
+  character.react(selected.kind);
+  hint.textContent = selected.message;
+  if (selected.easterEgg) body.dataset.easterEgg = selected.easterEgg;
+  reactionTimer = setTimeout(() => {
+    delete body.dataset.reaction;
+    delete body.dataset.easterEgg;
+    character.react(null);
+    hint.textContent = "";
+    scheduleIdle();
+  }, selected.duration);
 }
+function react(intent) { playReaction(interaction.reaction(intent)); }
 function resetReaction() {
   stopIdle();
   clearTimeout(holdTimer); pressPoint = undefined; suppressClick = false;
   clearTimeout(reactionTimer); clearTimeout(hoverTimer); clearTimeout(hintTimer);
   delete body.dataset.reaction;
+  delete body.dataset.easterEgg;
   character.react(null);
   body.classList.remove("is-affectionate");
   near = false; hovering = false; hint.textContent = ""; gesture.reset();
@@ -106,8 +114,8 @@ function proximity({ near: isNear, x, y }) {
   body.classList.toggle("is-affectionate", isNear);
   if (isNear) { stopIdle(); character.motion({ x, y, gait: "idle" }); }
   else if (near) character.reset();
-  if (isNear && !near && performance.now() - lastReaction > 1600) react("shy", "你来啦");
-  if (isNear && performance.now() - lastReaction > 5000) react("nuzzle", "蹭蹭你");
+  if (isNear && !near && performance.now() - lastReaction > 1600) playReaction(interaction.proximity("enter"));
+  if (isNear && performance.now() - lastReaction > 5000) playReaction(interaction.proximity("dwell"));
   near = isNear;
   if (!near) scheduleIdle();
 }
@@ -133,9 +141,9 @@ window.bluepet.onState(state => {
 });
 window.bluepet.onPetMotion(motion => {
   if (drag.pressed) return;
-  const nextMoving = mode === "pet" && motion.gait === "run";
+  const nextMoving = mode === "pet" && motion.gait !== "idle";
   if (nextMoving && !moving) resetReaction();
-  if (mode === "dodge" || nextMoving || moving) character.motion(motion);
+  if (mode === "dodge" || mode === "pet") character.motion(motion);
   moving = nextMoving;
   body.classList.toggle("is-moving", moving);
   if (!moving) scheduleIdle();
@@ -184,7 +192,7 @@ pet.addEventListener("click", event => {
   window.bluepet.focusPet();
   if (suppressClick) { suppressClick = false; return; }
   const { x, y } = event.detail === 0 ? { x: .5, y: .5 } : point(event);
-  react(clickReaction(x, y));
+  react(clickReaction(x, y, character.definition.interactionParts));
 });
 pet.addEventListener("pointerdown", event => {
   if (mode !== "pet" || chatOpen || moving || event.button !== 0) return;
@@ -197,13 +205,15 @@ pet.addEventListener("pointercancel", () => {
   clearTimeout(holdTimer); pressPoint = undefined; gesture.reset();
 });
 pet.addEventListener("pointerenter", () => {
+  window.bluepet.setPetHover(true);
   if (mode !== "pet" || chatOpen || moving || drag.pressed) return;
   hovering = true; stopIdle();
   body.classList.add("is-affectionate");
   clearTimeout(hoverTimer);
-  hoverTimer = setTimeout(() => react("nuzzle", "再陪我一会儿"), 1100);
+  hoverTimer = setTimeout(() => playReaction(interaction.proximity("dwell")), 1100);
 });
 pet.addEventListener("pointerleave", () => {
+  window.bluepet.setPetHover(false);
   if (drag.pressed) return;
   hovering = false;
   clearTimeout(hoverTimer); clearTimeout(holdTimer); pressPoint = undefined; gesture.reset();

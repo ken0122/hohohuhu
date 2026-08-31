@@ -8,6 +8,7 @@ import { app, dialog, globalShortcut, nativeImage, screen, powerMonitor, systemP
 // Real Electron windows, isolated app data. Live chat is explicitly opt-in.
 await mkdir(path.resolve("work"), { recursive: true });
 app.setPath("userData", await mkdtemp(path.resolve("work/desktop-test-")));
+process.env.BLUEPET_TEST_CHARACTER_ANALYSIS = "1";
 const runtime = await import(process.env.BLUEPET_TEST_APP_ROOT
   ? pathToFileURL(path.join(process.env.BLUEPET_TEST_APP_ROOT, "src/main.js")).href
   : "../src/main.js");
@@ -21,6 +22,17 @@ const evaluate = code => getRuntime().petWindow.webContents.executeJavaScript(co
 async function toggleAndWait() {
   toggleHidden();
   if(getRuntime().state.manualHidden)await until(()=>!getRuntime().hiding,700);
+}
+async function focusWindow(win) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await until(() => {
+      app.focus({ steal: true }); win.focus(); win.webContents.focus();
+      return win.isFocused();
+    }, 8000);
+    await delay(120);
+    if (win.isFocused()) return;
+  }
+  throw new Error("窗口焦点无法稳定保持");
 }
 const results = [];
 let currentCheck;
@@ -47,6 +59,13 @@ async function visiblePixels(win = getRuntime().petWindow) {
   assert.ok(blue > 600, "character should have >600 real blue pixels, got " + blue);
   return capture;
 }
+function yellowPixels(capture) {
+  const bitmap = capture.toBitmap(); let count = 0;
+  for (let i = 0; i < bitmap.length; i += 4) {
+    if (bitmap[i] < 150 && bitmap[i + 1] > 150 && bitmap[i + 2] > 200 && bitmap[i + 3] > 100) count++;
+  }
+  return count;
+}
 async function run() {
 try {
   await writeResults("running");
@@ -63,22 +82,41 @@ try {
     await until(() => js("document.body.dataset.ready === 'true'"));
     assert.equal(getRuntime().state.manualHidden, true);
     assert.equal(getRuntime().petWindow.isVisible(), false);
+    assert.equal(win.isAlwaysOnTop(), false, "角色窗口不应挡住其他应用");
     assert.equal(await js("typeof window.bluepet"), "undefined");
     const prefs = win.webContents.getLastWebPreferences();
     assert.equal(prefs.sandbox, true); assert.equal(prefs.contextIsolation, true); assert.equal(prefs.nodeIntegration, false);
     getRuntime().trayMenu.getMenuItemById("characters").click(); assert.equal(getRuntime().characterWindow, win);
+    assert.equal(await js("document.querySelector('[data-id=sunny-yellow] small').textContent"), "内置");
+    await js("document.querySelector('[data-id=sunny-yellow]').click()");
+    await until(() => js("document.querySelector('#large svg')?.dataset.character === 'sunny-yellow' && !document.querySelector('#apply').disabled"));
+    assert.deepEqual(await js("[document.querySelectorAll('.sunny-pupils').length,document.querySelectorAll('.sunny-pupils circle').length]"), [3,6]);
+    assert.match(await js("document.querySelector('#personality').textContent"), /开朗.*爱庆祝/);
+    assert.match(await js("document.querySelector('#easter-egg').textContent"), /三连点亮/);
+    assert.match(await js("document.querySelector('#capabilities').textContent"), /珊瑚色眼睛会跟随/);
+    await until(async () => yellowPixels(await win.webContents.capturePage()) > 500);
+    await js("document.querySelector('.stage').dispatchEvent(new PointerEvent('pointermove',{clientX:700,clientY:120,bubbles:true}))");
+    assert.equal(await js("document.querySelector('#large svg').dataset.looking"), "true");
+    await js("document.querySelector('#egg-preview').click()");
+    assert.equal(await js("document.querySelector('#large svg').dataset.reaction"), "sunny-secret");
+    await js("document.querySelector('#apply').click()");
+    await until(() => evaluate("document.querySelector('.mascot-svg').dataset.character === 'sunny-yellow'"));
+    assert.equal(await evaluate("document.querySelectorAll('.sunny-pupils circle').length"), 2);
+    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.affection span'),node=>node.textContent)"), ["✦","☀","✦"]);
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.affection span')).color"), "rgb(244, 163, 64)");
+    assert.equal(await evaluate("document.querySelectorAll('.mascot-svg [fill=\"#ffd45a\"]').length"), 1, "隐藏状态下也应完成小太阳的桌面 SVG 替换");
     await js("document.querySelector('[data-id=black-cat]').click()");
     await until(() => js("document.querySelector('#large svg')?.dataset.character === 'black-cat' && !document.querySelector('#apply').disabled"));
     assert.deepEqual(await js("[document.querySelectorAll('.cat-pupils').length,document.querySelectorAll('.cat-pupils circle').length]"), [3,6]);
     assert.match(await js("document.querySelector('#capabilities').textContent"), /眼睛会跟随/);
-    assert.match(await js("document.querySelector('#selection-status').textContent"), /正在预览.*当前是/);
-    assert.equal(await js("document.querySelector('[data-id=blue-one-eye] .current-badge').textContent"), "当前");
+    assert.match(await js("document.querySelector('#selection-status').textContent"), /预览中.*当前角色/);
+    assert.equal(await js("document.querySelector('[data-id=sunny-yellow] .current-badge').textContent"), "当前");
     await js("document.querySelector('.stage').dispatchEvent(new PointerEvent('pointermove',{clientX:700,clientY:120,bubbles:true}))");
     assert.equal(await js("document.querySelector('#large svg').dataset.looking"), "true");
     assert.notEqual(await js("document.querySelector('#large svg').style.getPropertyValue('--gaze-x')"), "0.00px");
     await js("document.querySelector('.stage').dispatchEvent(new PointerEvent('pointerleave',{bubbles:true}))");
     assert.equal(await js("document.querySelector('#large svg').dataset.looking"), undefined);
-    assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.character"), "blue-one-eye", "preview alone must not apply");
+    assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.character"), "sunny-yellow", "preview alone must not apply");
     await evaluate("window.oldCharacter = document.querySelector('.mascot-svg')");
     await js("document.querySelector('#apply').click()");
     await until(() => evaluate("document.querySelector('.mascot-svg').dataset.character === 'black-cat' && document.querySelector('#pet').dataset.hideCharacter === 'black-cat'"));
@@ -87,21 +125,26 @@ try {
     assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.affection span'),node=>node.textContent)"), ["✦","♥","✦"]);
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.affection span')).color"), "rgb(242, 188, 82)");
     assert.equal(await evaluate("document.querySelectorAll('.cat-pupils circle').length"), 2);
-    assert.equal(await js("document.querySelector('#apply').textContent"), "已是当前角色");
+    assert.equal(await js("document.querySelector('#apply').textContent"), "正在使用");
     assert.equal(await js("document.querySelector('#apply').classList.contains('is-current')"), true);
     assert.equal(await js("document.querySelector('[data-id=black-cat] .current-badge').textContent"), "当前");
     assert.equal(getRuntime().state.manualHidden, true);
     assert.equal(getRuntime().petWindow.isVisible(), false);
     await toggleAndWait();
+    win.hide(); await until(() => !win.isVisible());
     const petWindow = getRuntime().petWindow;
-    app.focus({steal:true}); petWindow.focus(); petWindow.webContents.focus();
-    await until(() => petWindow.isFocused());
-    const beforeMove = petWindow.getPosition();
-    petWindow.webContents.sendInputEvent({type:"keyDown",keyCode:"LEFT"});
-    await delay(200);
+    await focusWindow(petWindow);
+    let beforeMove;
+    for (let attempt=0; attempt<3; attempt++) {
+      await focusWindow(petWindow); beforeMove=petWindow.getPosition();
+      petWindow.webContents.sendInputEvent({type:"keyDown",keyCode:"LEFT"}); await delay(200);
+      if (await evaluate("document.querySelector('.mascot-svg').dataset.gait==='run'")) break;
+      petWindow.webContents.sendInputEvent({type:"keyUp",keyCode:"LEFT"});
+    }
     assert.ok(petWindow.getPosition()[0] < beforeMove[0] - 10, "black cat must move the native window");
     assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.gait"),"run");
-    assert.ok(await evaluate("document.querySelector('.mascot-svg').getAnimations().length > 0"));
+    assert.ok(await evaluate("document.querySelector('.mascot-svg').getAnimations({subtree:true}).length > 0"));
+    assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.facing"), "left");
     petWindow.webContents.sendInputEvent({type:"keyUp",keyCode:"LEFT"});
     await until(() => evaluate("document.querySelector('.mascot-svg').dataset.gait === 'idle'"));
     await toggleAndWait(); assert.equal(petWindow.isVisible(),false);
@@ -128,6 +171,7 @@ try {
     assert.deepEqual(await gameJs("[savedGame.score,savedGame.level,savedGame.pet.speed,JSON.stringify(savedGame.pellets)===savedPellets]"),[7,2,364,true]);
     assert.equal(await gameJs("document.querySelectorAll('.character-lid').length"),0);
     assert.equal(await gameJs("document.querySelectorAll('.cat-pupils circle').length"),2);
+    win.show(); await until(() => win.isVisible());
     await writeFile(path.resolve("work/character-library.png"),(await win.webContents.capturePage()).toPNG());
     await js("document.querySelector('[data-id=blue-one-eye]').click()");
     await until(() => js("!document.querySelector('#apply').disabled"));
@@ -156,7 +200,7 @@ try {
       await js("window.confirm=()=>false;document.querySelector('#choose').click()");
       await delay(80);
       assert.equal(pickerCalls, callsBeforeGuard, "reimport guard must run before native picker");
-      assert.equal(await js("document.querySelector('#selection-status').textContent.includes('未保存草稿')"), true);
+      assert.equal(await js("document.querySelector('#selection-status').textContent.includes('不会覆盖')"), true);
       dialog.showMessageBox = async () => { closePrompts++; return {response:0}; };
       await delay(80); win.close();
       await until(() => closePrompts === 1);
@@ -165,11 +209,11 @@ try {
       dialog.showMessageBox = originalMessageBox;
       assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.character"), "blue-one-eye");
       await js("document.querySelector('button[data-gait=walk]').click()");
-      await until(() => js("document.querySelector('#desktop svg').getAnimations().length > 0"));
+      await until(() => js("document.querySelector('#desktop .character-root').getAnimations().length > 0"));
       await js("document.querySelector('#pause').click()");
-      assert.equal(await js("document.querySelector('#desktop svg').getAnimations().length"),0);
+      assert.equal(await js("document.querySelector('#desktop .character-root').getAnimations().length"),0);
       await js("document.querySelector('#pause').click()");
-      await until(() => js("document.querySelector('#desktop svg').getAnimations().length > 0"));
+      await until(() => js("document.querySelector('#desktop .character-root').getAnimations().length > 0"));
       await js("document.querySelector('button[data-gait=idle]').click();document.querySelector('#character-name').value='桌面测试角色'");
       assert.equal(await js("document.querySelector('#apply').getBoundingClientRect().bottom <= innerHeight"),true);
       await writeFile(path.resolve("work/character-import.png"),(await win.webContents.capturePage()).toPNG());
@@ -182,9 +226,19 @@ try {
       await until(() => evaluate("document.querySelector('.mascot-svg').dataset.character.startsWith('local-')"));
       const importedId = await evaluate("document.querySelector('.mascot-svg').dataset.character");
       const {readFile} = await import('node:fs/promises');
-      const stored = JSON.parse(await readFile(path.join(app.getPath('userData'),'characters-v1.json'),'utf8'));
+      const stored = JSON.parse(await readFile(path.join(app.getPath('userData'),'characters-v2.json'),'utf8'));
       assert.equal(stored.selected,importedId); assert.equal(stored.items[0].name,'桌面测试角色');
+      assert.equal(stored.version,2); assert.equal("profile" in stored.items[0],false);
+      assert.equal((await js("window.characterLibrary.source("+JSON.stringify(importedId)+").then(r=>r.value.profile.persona.archetype)")),'proud');
+      assert.deepEqual(stored.items[0].analysis.parts.map(part=>part.kind),['body','eye']);
       assert.equal(stored.items[0].svg,await js("window.characterLibrary.source("+JSON.stringify(importedId)+").then(r=>r.value.svg)"));
+      await js("document.querySelector('#edit').click()");
+      await until(() => js("!document.querySelector('#draft-fields').hidden && document.querySelector('#apply').textContent === '保存修改'"));
+      await js("document.querySelector('#character-name').value='改名后的测试角色';document.querySelector('[data-dialogue=nuzzle]').value='编辑后的贴贴';document.querySelector('#apply').click()");
+      await until(() => js("document.querySelector('#name').textContent === '改名后的测试角色'"));
+      const editedStored = JSON.parse(await readFile(path.join(app.getPath('userData'),'characters-v2.json'),'utf8'));
+      assert.equal(editedStored.items[0].name,'改名后的测试角色');
+      assert.deepEqual(editedStored.items[0].analysis.dialogue.nuzzle,['编辑后的贴贴']);
       assert.equal((await js("window.characterLibrary.import({name:'attack',svg:'<svg onload=\"alert(1)\"/>'})")).ok,false);
       const {default:sharp} = await import('sharp');
       picked = path.resolve('work/character-import-fixture.jpg');
@@ -194,7 +248,7 @@ try {
       assert.equal(await js("document.querySelector('#status').dataset.error"),'false',await js("document.querySelector('#status').textContent"));
       await js("document.querySelector('#cancel').click()");
       await until(() => js("document.querySelector('#draft-fields').hidden && document.body.getAttribute('aria-busy') === 'false'"));
-      assert.equal(JSON.parse(await readFile(path.join(app.getPath('userData'),'characters-v1.json'),'utf8')).items.length,1,"discarded JPG draft is not saved");
+      assert.equal(JSON.parse(await readFile(path.join(app.getPath('userData'),'characters-v2.json'),'utf8')).items.length,1,"discarded JPG draft is not saved");
       picked = path.resolve('assets/blue-one-eye-mascot.svg');
       await js("document.querySelector('#choose').click()");
       await until(() => js("document.querySelector('#status').dataset.error === 'true'"));
@@ -207,12 +261,103 @@ try {
       await until(() => getRuntime().characterWindow?.isVisible());
       const reopened = code => getRuntime().characterWindow.webContents.executeJavaScript(code);
       await until(() => reopened("document.body.dataset.ready === 'true'"));
-      assert.equal(await reopened("document.querySelector('#name').textContent"),'桌面测试角色');
+      assert.equal(await reopened("document.querySelector('#name').textContent"),'改名后的测试角色');
       await reopened("window.confirm=()=>true;document.querySelector('#remove').click()");
       await until(() => evaluate("document.querySelector('.mascot-svg').dataset.character === 'blue-one-eye'"));
-      assert.equal(JSON.parse(await readFile(path.join(app.getPath('userData'),'characters-v1.json'),'utf8')).items.length,0);
+      assert.equal(JSON.parse(await readFile(path.join(app.getPath('userData'),'characters-v2.json'),'utf8')).items.length,0);
       getRuntime().characterWindow.close(); await until(() => !getRuntime().characterWindow);
     } finally { dialog.showOpenDialog = originalPicker; dialog.showMessageBox = originalMessageBox; }
+  });
+  await check("Character color import: raster normalization, editable analysis and live use", async () => {
+    const originalPicker = dialog.showOpenDialog;
+    const { default: sharp } = await import("sharp");
+    const fixture = path.resolve("work/character-color-fixture.png");
+    await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240">
+      <rect width="240" height="240" fill="#f7f7f2"/>
+      <path d="M62 202V88Q62 54 96 54H144Q178 54 178 88V202Z" fill="#ffd45a"/>
+      <path d="M72 72L84 28L108 61M168 72L156 28L132 61" fill="#ffb46f"/>
+      <circle cx="98" cy="105" r="12" fill="#fff0a6"/><circle cx="142" cy="105" r="12" fill="#fff0a6"/>
+      <circle cx="101" cy="106" r="5" fill="#ff8f70"/><circle cx="145" cy="106" r="5" fill="#ff8f70"/>
+      <path d="M178 150Q220 130 205 96" fill="none" stroke="#ffd45a" stroke-width="18" stroke-linecap="round"/>
+    </svg>`)).png().toFile(fixture);
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fixture] });
+    try {
+      if (getRuntime().state.manualHidden) await toggleAndWait();
+      setMode("pet");
+      getRuntime().trayMenu.getMenuItemById("characters").click();
+      await until(() => getRuntime().characterWindow?.isVisible());
+      const win = getRuntime().characterWindow, js = code => win.webContents.executeJavaScript(code);
+      await until(() => js("document.body.dataset.ready === 'true'"));
+      await js("document.querySelector('#choose').click()");
+      await until(() => js("!document.querySelector('#draft-fields').hidden || document.querySelector('#status').dataset.error === 'true'"), 12000);
+      assert.equal(await js("document.querySelector('#status').dataset.error"), "false", await js("document.querySelector('#status').textContent"));
+      assert.equal(await js("document.querySelector('#large image')?.getAttribute('href').startsWith('data:image/png;base64,')"), true);
+      await until(async () => yellowPixels(await win.webContents.capturePage()) > 500);
+      assert.ok(yellowPixels(await win.webContents.capturePage()) > 500, "彩色角色预览应渲染真实黄色像素，而不是破图图标");
+      assert.deepEqual(await js("[document.querySelectorAll('.imported-eye-masks ellipse').length,document.querySelectorAll('.imported-pupils circle').length]"), [6, 6], "三种预览尺寸都应遮住两枚固定瞳孔并换成可移动瞳孔");
+      await writeFile(path.resolve("work/character-color-import.png"), (await win.webContents.capturePage()).toPNG());
+      assert.deepEqual(await js("Array.from(document.querySelectorAll('.part-row select'),select=>select.value)"), ["body", "eye"]);
+      await js(`document.querySelector('#character-name').value='彩色测试角色';
+        document.querySelector('#persona-archetype').value='cheerful';
+        document.querySelector('#persona-voice').value='bright';
+        document.querySelector('#persona-identity').value='彩色桌面伙伴';
+        document.querySelector('#persona-summary').value='开朗又爱回应。';
+        document.querySelector('#persona-traits').value='开朗、亲近';
+        document.querySelector('[data-dialogue=nuzzle]').value='来贴贴吧｜我会接住你';
+        document.querySelector('#egg-label').value='尾巴暗号';
+        document.querySelector('#egg-trigger').value='nuzzle';
+        document.querySelector('#egg-description').value='连续贴贴三次会亮出暗号。';
+        document.querySelector('#egg-message').value='暗号对上啦';
+        document.querySelector('#add-part').click();
+        document.querySelectorAll('.part-row select')[2].value='tail';
+        document.querySelector('#apply').click();`);
+      await until(() => evaluate("document.querySelector('.mascot-svg').dataset.character.startsWith('local-')"));
+      const id = await evaluate("document.querySelector('.mascot-svg').dataset.character");
+      assert.ok(yellowPixels(await getRuntime().petWindow.webContents.capturePage()) > 100, "桌面角色应渲染内嵌彩色图片");
+      assert.equal(await evaluate("document.querySelectorAll('.imported-pupils circle').length"), 2, "导入角色应从宽眼睛框生成一对运行时瞳孔");
+      assert.equal(await evaluate("document.querySelectorAll('.imported-eye-masks ellipse').length"), 2, "桌面角色应遮住原图固定瞳孔");
+      win.hide(); await until(() => !win.isVisible());
+      const petWindow = getRuntime().petWindow;
+      const realCursor = screen.getCursorScreenPoint;
+      try {
+        await evaluate("window.bluepet.setPetHover(true)");
+        await until(() => getRuntime().petHovered);
+        const frame = petWindow.getBounds();
+        screen.getCursorScreenPoint = () => ({ x: frame.x + frame.width / 2, y: frame.y - 80 });
+        await until(() => evaluate("parseFloat(document.querySelector('.mascot-svg').style.getPropertyValue('--gaze-y')) < -1"));
+      } finally {
+        screen.getCursorScreenPoint = realCursor;
+        await evaluate("window.bluepet.setPetHover(false)");
+      }
+      await focusWindow(petWindow);
+      petWindow.webContents.sendInputEvent({type:"keyDown",keyCode:"LEFT"}); await delay(100);
+      assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.facing"), "left");
+      petWindow.webContents.sendInputEvent({type:"keyUp",keyCode:"LEFT"});
+      await until(() => evaluate("document.querySelector('.mascot-svg').dataset.gait === 'idle'"));
+      assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.facing"), "left", "静止时保留最后朝向");
+      petWindow.webContents.sendInputEvent({type:"keyDown",keyCode:"RIGHT"}); await delay(100);
+      assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.facing"), "right");
+      petWindow.webContents.sendInputEvent({type:"keyUp",keyCode:"RIGHT"});
+      await until(() => evaluate("document.querySelector('.mascot-svg').dataset.gait === 'idle'"));
+      assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.looking"), "true", "Pet 中导入角色也应持续看向光标");
+      const { readFile } = await import("node:fs/promises");
+      const stored = JSON.parse(await readFile(path.join(app.getPath("userData"), "characters-v2.json"), "utf8"));
+      assert.equal(stored.items[0].svg.includes("data:image/png;base64,"), true);
+      assert.equal("profile" in stored.items[0], false);
+      assert.equal((await evaluate("document.querySelector('.mascot-svg').style.getPropertyValue('--body-origin-y')")) !== "", true);
+      assert.deepEqual(stored.items[0].analysis.parts.map(part => part.kind), ["body", "eye", "tail"]);
+      assert.deepEqual(stored.items[0].analysis.dialogue.nuzzle, ["来贴贴吧", "我会接住你"]);
+      assert.equal(stored.items[0].analysis.easterEgg.label, "尾巴暗号");
+      assert.equal(await js(`window.characterLibrary.source(${JSON.stringify(id)}).then(r=>r.value.profile.easterEgg.reaction.messages[0])`), "暗号对上啦");
+      await until(() => evaluate(`document.querySelector('#pet').dataset.hideCharacter === ${JSON.stringify(id)}`));
+      win.close(); await until(() => !getRuntime().characterWindow);
+      getRuntime().trayMenu.getMenuItemById("characters").click();
+      await until(() => getRuntime().characterWindow?.isVisible());
+      await until(() => getRuntime().characterWindow.webContents.executeJavaScript("document.body.dataset.ready === 'true'"));
+      await getRuntime().characterWindow.webContents.executeJavaScript("window.confirm=()=>true;document.querySelector('#remove').click()");
+      await until(() => evaluate("document.querySelector('.mascot-svg').dataset.character === 'blue-one-eye'"));
+      getRuntime().characterWindow.close(); await until(() => !getRuntime().characterWindow);
+    } finally { dialog.showOpenDialog = originalPicker; }
   });
   await check("API settings: tray entry, isolated window, encrypted save, reopen and clear", async () => {
     const items = getRuntime().trayMenu.items;
@@ -227,6 +372,7 @@ try {
     await until(() => js("!document.querySelector('fieldset').disabled"));
     assert.equal(getRuntime().state.manualHidden, true);
     assert.equal(getRuntime().petWindow.isVisible(), false);
+    assert.equal(win.isAlwaysOnTop(), false, "聊天设置不应挡住其他应用");
     getRuntime().trayMenu.getMenuItemById("api-settings").click();
     assert.equal(getRuntime().settingsWindow, win);
     const prefs = win.webContents.getLastWebPreferences();
@@ -239,7 +385,7 @@ try {
     await js("document.querySelector('#base-url').value='https://evil.test'; document.querySelector('#api-key').value='desktop-fake-key'; document.querySelector('form').requestSubmit()");
     await until(() => js("document.querySelector('#status').dataset.error === 'true'"));
     await js("document.querySelector('#base-url').value='https://api.deepseek.com/anthropic'; document.querySelector('#api-key').value='desktop-fake-key'; document.querySelector('form').requestSubmit()");
-    await until(() => js("document.querySelector('#status').textContent.includes('已保存，下次')"));
+    await until(() => js("document.querySelector('#status').textContent.includes('已保存，下次聊天生效')"));
     assert.equal(await js("document.querySelector('#api-key').value"), "");
     const { readFile } = await import("node:fs/promises");
     assert.ok(!(await readFile(path.join(app.getPath("userData"), "api-settings.enc"))).includes(Buffer.from("desktop-fake-key")));
@@ -260,16 +406,16 @@ try {
     getRuntime().trayMenu.getMenuItemById("api-settings").click();
     await until(() => getRuntime().settingsWindow?.isFocused());
     assert.equal(getRuntime().state.mode, "pacman");
-    assert.equal(getRuntime().settingsWindow.isAlwaysOnTop(), true);
+    assert.equal(getRuntime().settingsWindow.isAlwaysOnTop(), false);
     getRuntime().settingsWindow.close();
     setMode("pet");
   });
-  await check("renderer uses original SVG geometry with no extra layers",async()=>{
+  await check("renderer preserves original SVG geometry inside standard motion layers",async()=>{
     setMode("pet"); await delay(150);
     const original = await evaluate("window.bluepet.loadMascot()");
     const originalBody=original.match(/class="body" d="([^"]+)"/)[1];
     assert.equal(await evaluate("document.querySelector('path.body').getAttribute('d')"),originalBody);
-    const structure=await evaluate("Array.from(document.querySelector('.mascot-svg').querySelectorAll('*'),e=>e.tagName)");
+    const structure=await evaluate("Array.from(document.querySelector('.mascot-svg').querySelectorAll('*'),e=>({tag:e.tagName,runtime:e.classList.contains('character-facing')||e.classList.contains('character-content')})).filter(e=>!e.runtime).map(e=>e.tag)");
     const baseline=await evaluate("Array.from(new DOMParser().parseFromString("+JSON.stringify(original)+",'image/svg+xml').documentElement.querySelectorAll('*'),e=>e.tagName)");
     assert.deepEqual(structure,baseline);
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.pet')).width"),"84px");
@@ -293,16 +439,17 @@ try {
       try {
         first = mountCharacter(host, parse(), BASIC_SVG);
         first.motion({ gait: 'walk' });
-        const animation = first.svg.getAnimations()[0];
+        const root = first.svg.querySelector('.character-root');
+        const animation = root.getAnimations()[0];
         ensure(animation, 'generic gait must animate a real SVG without anatomy');
         await new Promise(resolve => setTimeout(resolve, 90));
-        ensure(new DOMMatrix(getComputedStyle(first.svg).transform).m42 < 0, 'generic gait changes the actual transform');
+        ensure(new DOMMatrix(getComputedStyle(root).transform).m42 < 0, 'generic gait changes the actual transform');
         first.motion({ gait: 'walk' });
-        ensure(first.svg.getAnimations()[0] === animation, 'same gait must not restart');
+        ensure(root.getAnimations()[0] === animation, 'same gait must not restart');
         first.reset();
         const before = original.dataset.reaction;
         first.react('poke');
-        ensure(getComputedStyle(first.svg).animationName === 'poke', 'generic SVG gets the shared reaction');
+        ensure(getComputedStyle(root).animationName === 'poke', 'generic SVG gets the shared reaction');
         ensure(original.dataset.reaction === before, 'preview reaction must not change the desktop pet');
         first.react(null);
         first.motion({ gait: 'run' });
@@ -314,7 +461,7 @@ try {
         first.motion({ gait: 'walk' }); first.react('hop');
         ensure(first.svg.dataset.reaction === undefined, 'old controller cannot restart a reaction');
         second.react('hop');
-        ensure(getComputedStyle(second.svg).animationName === 'happy-hop', 'replacement supports reactions');
+        ensure(getComputedStyle(second.svg.querySelector('.character-root')).animationName === 'happy-hop', 'replacement supports reactions');
         second.destroy();
         ensure(second.svg.getAnimations().length === 0, 'destroy cancels CSS and JS animation');
       } finally { first?.destroy(); second?.destroy(); host.remove(); }
@@ -349,10 +496,12 @@ try {
       const animationCounts = () => evaluate("window.characterFixtures.map(({character})=>character.svg.getAnimations({subtree:true}).length)");
       assert.deepEqual(await animationCounts(), [0, 0], "preference is read at creation");
       await media("no-preference");
+      await until(() => evaluate("!matchMedia('(prefers-reduced-motion: reduce)').matches"));
       await until(async () => (await animationCounts()).every(count => count > 0));
       await evaluate("window.characterFixtures[0].character.react('shy')");
       assert.ok(await evaluate("window.characterFixtures[0].character.svg.querySelector('.lid').getAnimations().length > 0"));
       await media("reduce");
+      await until(() => evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"));
       await until(async () => (await animationCounts()).every(count => count === 0));
       assert.equal(await evaluate("new DOMMatrix(getComputedStyle(window.characterFixtures[0].character.svg.querySelector('.lid')).transform).m42"), -20);
     } finally {
@@ -426,14 +575,16 @@ try {
       // Wait for an IPC/render frame, then verify the actual pupil transform.
       await until(async()=>{
         const actual=await evaluate(`(()=>{
+          const svg=document.querySelector('.mascot-svg');
           const pupil=document.querySelector('.pupil');
           const transform=new DOMMatrix(getComputedStyle(pupil).transform);
-          return {x:transform.m41+4,y:transform.m42+.3};
+          return {x:transform.m41+4,y:transform.m42+.3,facing:svg.dataset.facing};
         })()`);
-        return Math.abs(actual.x-(length?offset.x/length*4:0))<.1 &&
+        const facing=actual.facing==='left'?-1:1;
+        return Math.abs(actual.x-(length?offset.x/length*4*facing:0))<.1 &&
           Math.abs(actual.y-(length?offset.y/length*4:0))<.1;
       },1000).catch(async error=>{
-        const detail=await evaluate("(()=>{const s=document.querySelector('.mascot-svg'),t=new DOMMatrix(getComputedStyle(s.querySelector('.pupil')).transform);return {gaze:[s.style.getPropertyValue('--gaze-x'),s.style.getPropertyValue('--gaze-y')],actual:[t.m41+4,t.m42+.3],mode:document.body.dataset.mode,looking:s.dataset.looking};})()");
+        const detail=await evaluate("(()=>{const s=document.querySelector('.mascot-svg'),t=new DOMMatrix(getComputedStyle(s.querySelector('.pupil')).transform);return {gaze:[s.style.getPropertyValue('--gaze-x'),s.style.getPropertyValue('--gaze-y')],actual:[t.m41+4,t.m42+.3],facing:s.dataset.facing,mode:document.body.dataset.mode,looking:s.dataset.looking};})()");
         throw new Error(error.message+JSON.stringify({offset,detail,state:getRuntime().state,velocity:getRuntime().velocity,menuOpen:getRuntime().menuOpen}));
       });
     };
@@ -552,8 +703,10 @@ try {
       await media("reduce");win.reload();await delay(450);
       await until(()=>evaluate("Boolean(document.querySelector('.hide-particles'))"));
       toggleHidden();await until(()=>!win.isVisible(),300);toggleHidden();await delay(100);
-      await media("no-preference");await delay(100);toggleHidden();await delay(100);
-      assert.equal(win.isVisible(),true);await media("reduce");await until(()=>!win.isVisible(),300);
+      await media("no-preference");await until(()=>evaluate("!matchMedia('(prefers-reduced-motion: reduce)').matches"));toggleHidden();await delay(100);
+      assert.equal(win.isVisible(),true);await media("reduce");
+      await until(()=>evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"));
+      await until(()=>!win.isVisible(),300);
       toggleHidden();await delay(100);assert.equal(win.isVisible(),true);
     } finally {await media("no-preference");win.webContents.debugger.detach();systemPreferences.getAnimationSettings=realAnimations;setMode("pet");}
   });
@@ -692,17 +845,22 @@ try {
   await check("Pet keyboard: four directions, release, focus loss, chat isolation and legacy Control alias",async()=>{
     setMode("control"); await delay(150); assert.equal(getRuntime().state.mode,"pet");
     for(const [key,axis,sign] of [["LEFT","x",-1],["UP","y",-1],["RIGHT","x",1],["DOWN","y",1]]) {
-      const win=getRuntime().petWindow, before=getRuntime().position;
+      const win=getRuntime().petWindow;
+      let before;
       const events=[];
       const collect=(_event,input)=>events.push({type:input.type,key:input.key,code:input.code});
       win.webContents.on("before-input-event",collect);
-      app.focus({steal:true}); win.focus(); win.webContents.focus();
-      await until(()=>win.isFocused()); await delay(120);
-      win.webContents.sendInputEvent({type:"keyDown",keyCode:key}); await delay(200);
+      for (let attempt=0; attempt<3; attempt++) {
+        await focusWindow(win); before=getRuntime().position;
+        win.webContents.sendInputEvent({type:"keyDown",keyCode:key}); await delay(200);
+        if (await evaluate("document.querySelector('.mascot-svg').dataset.gait==='run'")) break;
+        win.webContents.sendInputEvent({type:"keyUp",keyCode:key});
+      }
       const after=getRuntime().position;
       assert.ok((after[axis]-before[axis])*sign>10, key+" should move "+JSON.stringify({before,after,events,state:getRuntime().state,focused:win.isFocused(),menuOpen:getRuntime().menuOpen}));
       assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.gait"),"run",JSON.stringify({key,events,state:getRuntime().state,focused:win.isFocused(),menuOpen:getRuntime().menuOpen}));
-      assert.ok(Number.parseFloat(await evaluate("document.querySelector('.mascot-svg').style.getPropertyValue('--gaze-"+axis+"')"))*sign>0);
+      if (axis === "x") assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.facing"), sign < 0 ? "left" : "right");
+      assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.cursorGaze"), "true", "Pet eye follows the cursor rather than movement direction");
       assert.equal(await evaluate("document.querySelectorAll('.foot,.feet,.torso,.rig').length"),0);
       const bodyAnimation = await evaluate("document.querySelector('path.body').getAnimations().map(a=>a.effect.getTiming().duration)");
       assert.deepEqual(bodyAnimation,[220]);
@@ -712,10 +870,10 @@ try {
       await visiblePixels();
       await writeFile(path.resolve("work/pet-move-"+key.toLowerCase()+".png"),(await win.webContents.capturePage()).toPNG());
       app.focus({steal:true}); win.focus(); win.webContents.focus();
-      win.webContents.sendInputEvent({type:"keyUp",keyCode:key}); await delay(150);
+      win.webContents.sendInputEvent({type:"keyUp",keyCode:key});
       assert.ok(events.some(e=>e.type==="keyUp"), "key release reaches main process");
       win.webContents.removeListener("before-input-event",collect);
-      assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.gait"),"idle");
+      await until(() => evaluate("document.querySelector('.mascot-svg').dataset.gait === 'idle'"), 1000);
     }
     const win=getRuntime().petWindow;
     win.webContents.sendInputEvent({type:"keyDown",keyCode:"LEFT"}); await delay(100); win.emit("blur");
@@ -782,7 +940,7 @@ try {
   await check("Pet drag: native pointer capture, threshold, release without click and stable placement",async()=>{
     setMode("dodge");setMode("pet");await delay(200);
     const win=getRuntime().petWindow;
-    app.focus({steal:true});win.focus();win.webContents.focus();await delay(150);
+    await focusWindow(win);
     const rect=await evaluate("document.querySelector('.pet').getBoundingClientRect().toJSON()");
     const bounds=win.getBounds(), origin=getRuntime().position;
     const start={x:bounds.x+Math.round(rect.x+rect.width*.5),y:bounds.y+Math.round(rect.y+rect.height*.75)};
@@ -849,7 +1007,7 @@ try {
     await until(()=>evaluate("Boolean(document.body.dataset.reaction?.startsWith('idle-'))"),23000);
     assert.ok(performance.now()-start>=11500,"not a frequent looping motion");
     assert.equal(await evaluate("document.body.dataset.reaction"),"idle-look");
-    assert.ok(parseFloat(await evaluate("document.querySelector('.mascot-svg').style.getPropertyValue('--gaze-x')"))<0);
+    assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.cursorGaze"), "true", "standard cursor gaze remains authoritative during an idle gesture");
     await writeFile(path.resolve("work/pet-idle-look.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
     await delay(1700); assert.equal(await evaluate("document.body.dataset.reaction"),undefined);
     await delay(2500); assert.equal(await evaluate("document.body.dataset.reaction"),undefined);
@@ -878,6 +1036,31 @@ try {
       win.webContents.debugger.detach();
     }
   });
+  await check("Pet avoidance: no wandering, fast reflex, and hover interaction priority",async()=>{
+    setMode("dodge"); setMode("pet"); await until(()=>!getRuntime().modeTransition);
+    const realCursor=screen.getCursorScreenPoint, realAnimations=systemPreferences.getAnimationSettings;
+    const start={...getRuntime().position}, center={x:start.x+66,y:start.y+66};
+    let cursor={x:center.x+260,y:center.y}, samples=0;
+    screen.getCursorScreenPoint=()=>{samples++;return {...cursor};};
+    systemPreferences.getAnimationSettings=()=>({...realAnimations.call(systemPreferences),prefersReducedMotion:false});
+    try {
+      await evaluate("window.bluepet.setPetHover(false)");
+      await until(()=>samples>=3);
+      await delay(250);
+      assert.ok(Math.hypot(getRuntime().position.x-start.x,getRuntime().position.y-start.y)<2,"Pet 不应自主散步");
+      cursor={x:center.x+105,y:center.y};
+      await until(()=>getRuntime().dodgeMotion?.reflex);
+      assert.ok(getRuntime().velocity.x<0,"快速逼近时 Pet 应向反方向闪避");
+      await until(()=>evaluate("document.querySelector('.mascot-svg').dataset.gait==='run'"));
+      await evaluate("window.bluepet.setPetHover(true)");
+      await until(()=>getRuntime().petHovered&&Math.hypot(getRuntime().velocity.x,getRuntime().velocity.y)===0);
+      const held={...getRuntime().position}; await delay(160);
+      assert.ok(Math.hypot(getRuntime().position.x-held.x,getRuntime().position.y-held.y)<2,"进入互动区域后应停下，允许摸头和拖拽");
+    } finally {
+      screen.getCursorScreenPoint=realCursor; systemPreferences.getAnimationSettings=realAnimations;
+      await evaluate("window.bluepet.setPetHover(false)");
+    }
+  });
   await check("Dodge reflex: fast approach launches a visible native window, decays and resets after chat/hide",async()=>{
     setMode("pet");await delay(150);
     const origin=getRuntime().position,area=screen.getDisplayNearestPoint(origin).workArea;
@@ -902,8 +1085,8 @@ try {
       assert.deepEqual(await evaluate("document.querySelector('path.body').getAnimations().map(a=>a.effect.getTiming().duration)"),[220]);
       await delay(100);
       assert.ok(getRuntime().petWindow.getBounds().x<before.x-45,"native window visibly travels away");
-      assert.ok(Number(await evaluate("parseFloat(document.querySelector('.mascot-svg').style.getPropertyValue('--gaze-x'))"))>0,
-        "eye watches the cursor on the right while the native window flees left");
+      assert.deepEqual(await evaluate("(()=>{const s=document.querySelector('.mascot-svg');return [s.dataset.facing,parseFloat(s.style.getPropertyValue('--gaze-x'))<0]})()"), ["left", true],
+        "left-facing artwork reverses its local pupil offset so the final eye still watches the cursor on the right");
       assert.equal(getRuntime().petWindow.isVisible(),true);await visiblePixels();
       await delay(700);
       assert.equal(getRuntime().dodgeMotion.reflex,false);
@@ -1030,9 +1213,18 @@ try {
     assert.equal(await js("document.querySelectorAll('.lid').length"),0,"Pac-Man has no eyelid node");
     assert.equal(await js("getComputedStyle(document.querySelector('#game-pet')).width"),"64px");
     const before=await js("document.querySelector('#game-pet').style.transform");
+    const initialPet = await js("document.querySelector('#game-pet').getBoundingClientRect().toJSON()");
+    await js(`window.dispatchEvent(new PointerEvent('pointermove',{clientX:${initialPet.x + initialPet.width / 2},clientY:${initialPet.y - 100}}))`);
     win.webContents.sendInputEvent({type:"keyDown",keyCode:"UP"});await delay(200);
     assert.notEqual(await js("document.querySelector('#game-pet').style.transform"),before);
+    assert.equal(await js("document.querySelector('.mascot-svg').dataset.cursorGaze"), "true");
     assert.ok(parseFloat(await js("document.querySelector('.mascot-svg').style.getPropertyValue('--gaze-y')"))<0);
+    win.webContents.sendInputEvent({type:"keyDown",keyCode:"LEFT"}); await delay(60);
+    assert.equal(await js("document.querySelector('.mascot-svg').dataset.facing"), "left");
+    const gamePet = await js("document.querySelector('#game-pet').getBoundingClientRect().toJSON()");
+    await js(`window.dispatchEvent(new PointerEvent('pointermove',{clientX:${gamePet.right + 100},clientY:${gamePet.y + gamePet.height / 2}}))`);
+    await until(() => js("document.querySelector('.mascot-svg').dataset.cursorGaze === 'true'"));
+    assert.ok(parseFloat(await js("document.querySelector('.mascot-svg').style.getPropertyValue('--gaze-x')")) < 0, "左朝向时局部瞳孔偏移应补偿镜像，最终仍看向右侧光标");
     await visiblePixels(win);
     const sprite=await js("document.querySelector('#game-pet').getBoundingClientRect().toJSON()");
     await writeFile(path.resolve("work/pacman-no-lid.png"),(await win.webContents.capturePage({x:Math.round(sprite.x),y:Math.round(sprite.y),width:64,height:64})).toPNG());

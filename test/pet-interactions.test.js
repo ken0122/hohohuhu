@@ -27,3 +27,16 @@ test("slow stale movement, zone changes and leaving do not accidentally tickle",
   gesture.reset();
   assert.equal(gesture.move(.3,.75,1000),undefined);
 });
+test("recognized parts override generic zones and can be supplied to gesture tracking", () => {
+  const parts = [
+    { kind: "body", confidence: 1, box: [.2,.15,.6,.75] },
+    { kind: "head", confidence: .9, box: [.3,.58,.4,.2] },
+    { kind: "tail", confidence: .9, box: [.82,.45,.16,.2] },
+  ];
+  assert.equal(clickReaction(.5,.66,parts), "shy", "a low recognized head is not treated as belly");
+  assert.equal(clickReaction(.9,.55,parts), "nuzzle", "recognized tail uses a gentle side response");
+  const gesture = createStrokeGesture({ getParts: () => parts });
+  gesture.move(.31,.65,0);
+  assert.equal(gesture.move(.69,.65,60), undefined);
+  assert.equal(gesture.move(.31,.65,120), "headpat");
+});

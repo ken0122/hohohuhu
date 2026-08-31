@@ -160,3 +160,77 @@ export function vectorizeMonochrome({ data, width, height }) {
     },
   };
 }
+
+function colorDistance(a, b) {
+  return Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2]));
+}
+
+// Prepare a flat-color illustration for a trusted PNG wrapper. Transparent
+// backgrounds are preserved; opaque images must have a consistent corner color
+// that can be flood-filled without deleting enclosed character details.
+export function prepareColorRaster({ data, width, height }) {
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 3 || height < 3
+    || width * height > MAX_PIXELS || !(data instanceof Uint8Array) || data.length !== width * height * 4) {
+    throw new Error("需要不超过 1024×1024 像素总量的 RGBA 图片。");
+  }
+  const output = new Uint8Array(data), pixels = width * height;
+  let transparent = 0;
+  for (let i = 0; i < pixels; i++) if (output[i * 4 + 3] < 64) transparent++;
+  let backgroundRemoved = false;
+  if (transparent < Math.max(4, pixels * .002)) {
+    const corners = [[0,0],[width-1,0],[0,height-1],[width-1,height-1]].map(([x,y]) => {
+      const i = (y * width + x) * 4; return [output[i], output[i+1], output[i+2]];
+    });
+    if (corners.some(color => colorDistance(color, corners[0]) > 28)) {
+      throw new Error("彩色图片需要透明背景，或四角颜色一致的纯色背景。");
+    }
+    const background = corners.reduce((sum, color) => sum.map((value, i) => value + color[i] / corners.length), [0,0,0]);
+    const outside = new Uint8Array(pixels), queue = new Uint32Array(pixels);
+    let head = 0, tail = 0;
+    const push = index => {
+      if (outside[index]) return;
+      const i = index * 4, color = [output[i], output[i+1], output[i+2]];
+      if (colorDistance(color, background) > 34) return;
+      outside[index] = 1; queue[tail++] = index;
+    };
+    for (let x = 0; x < width; x++) { push(x); push((height - 1) * width + x); }
+    for (let y = 0; y < height; y++) { push(y * width); push(y * width + width - 1); }
+    while (head < tail) {
+      const index = queue[head++], x = index % width;
+      if (x > 0) push(index - 1);
+      if (x < width - 1) push(index + 1);
+      if (index >= width) push(index - width);
+      if (index < pixels - width) push(index + width);
+    }
+    for (let i = 0; i < pixels; i++) if (outside[i]) output[i * 4 + 3] = 0;
+    backgroundRemoved = true;
+  }
+  let minX = width, minY = height, maxX = -1, maxY = -1, foreground = 0;
+  for (let i = 0; i < pixels; i++) if (output[i * 4 + 3] >= 64) {
+    foreground++;
+    const x = i % width, y = Math.floor(i / width);
+    minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+  }
+  if (foreground < pixels * .01) throw new Error("图片中没有足够清晰的角色主体。");
+  if (foreground > pixels * .9) throw new Error("背景没有成功分离，请使用透明或纯色背景图片。");
+  if (minX === 0 || minY === 0 || maxX === width - 1 || maxY === height - 1) {
+    throw new Error("角色接触图片边缘，请提供完整角色和少量背景留白。");
+  }
+  return {
+    data: output,
+    bounds: Object.freeze({ x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 }),
+    backgroundRemoved,
+  };
+}
+
+export function mapPartBox(box, width, height, transform) {
+  if (!Array.isArray(box) || box.length !== 4 || !box.every(Number.isFinite)
+    || !Number.isFinite(transform?.scale) || !Number.isFinite(transform?.offsetX) || !Number.isFinite(transform?.offsetY)) {
+    throw new Error("部件坐标转换参数无效。");
+  }
+  const left = Math.max(0, Math.min(64, box[0] * width * transform.scale + transform.offsetX));
+  const top = Math.max(0, Math.min(64, box[1] * height * transform.scale + transform.offsetY));
+  const right = Math.max(left, Math.min(64, (box[0] + box[2]) * width * transform.scale + transform.offsetX));
+  const bottom = Math.max(top, Math.min(64, (box[1] + box[3]) * height * transform.scale + transform.offsetY));
+  return [left / 64, top / 64, (right - left) / 64, (bottom - top) / 64].map(value => Number(value.toFixed(4)));
+}

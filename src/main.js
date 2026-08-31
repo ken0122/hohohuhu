@@ -20,11 +20,13 @@ import {
   chatFrame,
   chatMotionBounds,
   cursorInSpeech,
+  cursorInPetSprite,
   controlVelocity,
   editingAction,
   fitPet,
   MODES,
   petShouldShow,
+  petShouldAvoid,
   normalizeMode,
   nextMode,
   PET_FRAME_SIZE,
@@ -35,6 +37,7 @@ import {
 import { BLUE_ONE_EYE, characterDefinition } from "./characters.js";
 import { transitionState } from "./app-state.js";
 import { createApiSettingsStore } from "./api-settings.js";
+import { analyzeCharacterImage, validateCharacterAnalysis } from "./character-analysis.js";
 import { createCharacterLibrary } from "./character-library.js";
 import { loadChatProvider } from "./chat-provider.js";
 import { askClaude } from "./chat.js";
@@ -66,6 +69,7 @@ let lastTick = performance.now(),
 let reducedMotion = false;
 let nativePosition;
 let dragSession;
+let petHovered = false;
 const dodge = createDodgeMotion();
 let dodgeMotion;
 let modeTransition, petHome;
@@ -105,7 +109,7 @@ function send(channel, payload) {
     petWindow.webContents.send(channel, payload);
 }
 function sendPetMotion(motion, cursor = screen.getCursorScreenPoint()) {
-  if (state.mode === MODES.DODGE && selectedCharacter.gaze && petReady && petWindow && !petWindow.isDestroyed()) {
+  if ([MODES.DODGE, MODES.PET].includes(state.mode) && selectedCharacter.gaze && petReady && petWindow && !petWindow.isDestroyed()) {
     const frame = petWindow.getBounds();
     // Selected character's gaze anchor, mapped into the actual native frame.
     // Gaze is independent of escape velocity, including when chat/menu freezes movement.
@@ -476,7 +480,10 @@ function tick() {
     arrivedPosition = motion.position;
     velocity = motion.velocity;
     if (motion.done) modeTransition = undefined;
-  } else if (state.mode === MODES.DODGE) {
+  } else if (state.mode === MODES.DODGE || petShouldAvoid({
+    mode: state.mode, chatOpen: state.chatOpen, manualControl: keys.size > 0,
+    hovered: petHovered || cursorInPetSprite(cursor, position),
+  })) {
     dodgeMotion = dodge.step({
       petCenter: {
         x: position.x + PET_SIZE / 2,
@@ -486,7 +493,7 @@ function tick() {
       dt: elapsed,
       bounds: state.chatOpen ? chatMotionBounds(bounds) : bounds,
       reducedMotion: reduced,
-      allowWander: !state.chatOpen,
+      allowWander: state.mode === MODES.DODGE && !state.chatOpen,
     });
     velocity = modeTransition
       ? launchVelocity(velocity, dodgeMotion.velocity, dt)
@@ -498,7 +505,7 @@ function tick() {
   } else {
     dodge.reset();
     dodgeMotion = undefined;
-    velocity = state.controlActive ? controlVelocity(keys) : { x: 0, y: 0 };
+    velocity = keys.size ? controlVelocity(keys) : { x: 0, y: 0 };
   }
   position =
     arrivedPosition ||
@@ -507,7 +514,7 @@ function tick() {
   movePetWindow();
   const moving = Math.hypot(velocity.x, velocity.y) > 0;
   sendPetMotion(
-    { ...velocity, gait: moving ? (state.mode === MODES.PET ? "run" : dodgeMotion.gait) : "idle" },
+    { ...velocity, gait: moving ? (state.mode === MODES.PET && keys.size ? "run" : dodgeMotion?.gait || "run") : "idle" },
     cursor,
   );
   if (state.mode === MODES.PET && !moving && now - lastProximity >= 50) {
@@ -558,7 +565,7 @@ function createPetWindow() {
   bindEditingShortcuts(win);
   win.webContents.on("before-input-event", controlInput);
   win.on("blur", () => interruptInteraction({ preserveMotion: true }));
-  win.webContents.on("did-start-loading", endPetDrag);
+  win.webContents.on("did-start-loading", () => { petHovered = false; endPetDrag(); });
   win.on("focus", () => dispatch("focus"));
   win.webContents.on("did-finish-load", () => {
     petReady = true;
@@ -592,7 +599,7 @@ function showApiSettings() {
     height: 510,
     resizable: false,
     maximizable: false,
-    title: "API 设置 · 呼噜呼噜",
+    title: "聊天设置 · 呼噜呼噜",
     backgroundColor: "#fbfcff",
     show: false,
     webPreferences: {
@@ -603,7 +610,6 @@ function showApiSettings() {
     },
   });
   settingsWindow = win;
-  win.setAlwaysOnTop(true, "screen-saver", 1);
   bindEditingShortcuts(win);
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (event) => event.preventDefault());
@@ -693,8 +699,8 @@ function rebuildTrayMenu() {
       enabled: app.isPackaged,
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
     },
-    { id: "characters", label: "角色库…", click: () => characterLibrary.show() },
-    { id: "api-settings", label: "API 设置…", click: showApiSettings },
+    { id: "characters", label: "角色…", click: () => characterLibrary.show() },
+    { id: "api-settings", label: "聊天设置…", click: showApiSettings },
     { id: "quit", label: "退出呼噜呼噜", click: () => app.quit() },
   ]);
   trayMenu.on("menu-will-show", () => {
@@ -751,7 +757,10 @@ function fromPet(event) {
 }
 ipcMain.handle("chat:send", (event, prompt) => {
   if (!fromPet(event)) throw new Error("Invalid sender");
-  return askClaude(prompt, { provider: () => apiSettingsStore.provider() || loadChatProvider() });
+  return askClaude(prompt, {
+    persona: selectedCharacter.profile.persona,
+    provider: () => apiSettingsStore.provider() || loadChatProvider(),
+  });
 });
 ipcMain.on("chat:dismiss", (event) => {
   if (fromPet(event)) restorePetFrame();
@@ -759,6 +768,14 @@ ipcMain.on("chat:dismiss", (event) => {
 ipcMain.on("pet:focus", (event) => {
   if (fromPet(event) && state.mode === MODES.PET && !state.chatOpen && !state.manualHidden)
     syncWindows({ focus: true });
+});
+ipcMain.on("pet:hover", (event, value) => {
+  if (!fromPet(event)) return;
+  petHovered = value === true;
+  if (petHovered && state.mode === MODES.PET) {
+    dodge.reset();
+    velocity = { x: 0, y: 0 };
+  }
 });
 ipcMain.on("pet:drag", handlePetDrag);
 ipcMain.on("pet:hide-done", (event, id) => {
@@ -796,14 +813,28 @@ export const ready = app.whenReady().then(async () => {
   characterLibrary = await createCharacterLibrary({
     directory: app.getPath("userData"),
     bindEditingShortcuts,
+    analyzeImage: process.env.BLUEPET_TEST_CHARACTER_ANALYSIS === "1"
+      ? async () => validateCharacterAnalysis({
+        version: 1,
+        quality: { decision: "pass", issues: [], explanation: "桌面测试使用本地固定分析，不请求真实模型。" },
+        persona: { archetype: "proud", voice: "reserved", identity: "一只桌面测试黑猫", summary: "警觉而克制。", traits: ["警觉", "克制"] },
+        parts: [{ kind: "body", confidence: .98, box: [.1, .1, .8, .8] }, { kind: "eye", confidence: .9, box: [.25, .3, .4, .12] }],
+      })
+      : input => analyzeCharacterImage(input, {
+        provider: () => apiSettingsStore.provider() || loadChatProvider(),
+      }),
     onOpen: () => interruptInteraction({ preserveMotion: true }),
     shouldForceClose: () => quitting,
     onChange: () => {
-      selectedCharacter = characterDefinition(characterLibrary.source().id);
+      const source = characterLibrary.source();
+      selectedCharacter = characterDefinition(source.id, source.profile, source.analysis);
       for (const win of [petWindow, gameWindow]) if (win && !win.isDestroyed()) win.webContents.send("character:changed");
     },
   });
-  selectedCharacter = characterDefinition(characterLibrary.source().id);
+  {
+    const source = characterLibrary.source();
+    selectedCharacter = characterDefinition(source.id, source.profile, source.analysis);
+  }
   pinPet();
   createPetWindow();
   const trayImage = nativeImage.createFromPath(path.join(dirname, "../assets/tray.png"));
@@ -863,6 +894,7 @@ export function getRuntime() {
     ignoringMouse,
     hiding: Boolean(hideAnimation),
     dragPending: Boolean(dragSession),
+    petHovered,
     dodgeMotion,
   };
 }

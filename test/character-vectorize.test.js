@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import sharp from "sharp";
-import { vectorizeMonochrome } from "../src/character-vectorize.js";
+import { mapPartBox, prepareColorRaster, vectorizeMonochrome } from "../src/character-vectorize.js";
 
 const source = new URL("../assets/characters/black-cat/source.png", import.meta.url);
 function bitmap(width = 12, height = 12) {
@@ -66,6 +66,23 @@ test("rejects invalid buffers, oversized images, blank images, color and clipped
   assert.throws(() => vectorizeMonochrome(color), /彩色/);
   const clipped = bitmap(); clipped.pixel(0, 4, [0, 0, 0, 255]);
   assert.throws(() => vectorizeMonochrome(clipped), /边缘/);
+});
+
+test("color preparation preserves foreground colors and removes only a connected solid background", () => {
+  const input = bitmap(20, 20); input.data.fill(255);
+  for (let y = 4; y < 17; y++) for (let x = 5; x < 15; x++) input.pixel(x, y, [40, 90, 220, 255]);
+  input.pixel(9, 8, [250, 190, 40, 255]);
+  const result = prepareColorRaster(input);
+  assert.equal(result.backgroundRemoved, true);
+  assert.deepEqual(result.bounds, { x: 5, y: 4, width: 10, height: 13 });
+  assert.equal(result.data[(8 * 20 + 9) * 4], 250);
+  assert.equal(result.data[3], 0);
+  const noisy = bitmap(20, 20); noisy.data.fill(255); noisy.pixel(19, 19, [20, 50, 90, 255]);
+  assert.throws(() => prepareColorRaster(noisy), /四角颜色一致/);
+});
+test("model part boxes map from source pixels into the normalized 64 unit artwork", () => {
+  assert.deepEqual(mapPartBox([.25,.2,.5,.6], 200, 100, { scale:.28, offsetX:4, offsetY:18 }), [.2813,.3688,.4375,.2625]);
+  assert.deepEqual(mapPartBox([0,0,1,1], 100, 100, { scale:1, offsetX:-20, offsetY:-20 }), [0,0,1,1]);
 });
 
 test("bounds contour complexity rather than producing a huge SVG", () => {

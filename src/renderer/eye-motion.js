@@ -4,6 +4,13 @@ export const idleDelay = (random = Math.random) => 12000 + random() * 10000;
 export function eyeFrames(kind, poses) {
   const open = `translateY(${poses.open}px)`;
   const closed = kind === "shy" ? poses.shy : kind === "blink" ? poses.blink : poses.reaction;
+  if (kind === "blue-secret") return [
+    { transform: open, offset: 0 },
+    { transform: `translateY(${poses.blink}px)`, offset: .18 },
+    { transform: open, offset: .42 },
+    { transform: `translateY(${poses.blink}px)`, offset: .66 },
+    { transform: open, offset: 1 },
+  ];
   return [
     { transform: open, offset: 0, easing: "ease-in" },
     { transform: `translateY(${closed}px)`, offset: .36, easing: "ease-out" },
@@ -22,7 +29,7 @@ export function createEyeMotion(lid, reduced, poses, doc = document) {
   function play(kind) {
     if (!canAnimate() || animation) return;
     clearTimeout(timer);
-    const current = lid.animate(eyeFrames(kind, poses), { duration: kind === "blink" ? 180 : 280 });
+    const current = lid.animate(eyeFrames(kind, poses), { duration: kind === "blink" ? 180 : kind === "blue-secret" ? 560 : 280 });
     animation = current;
     current.onfinish = () => {
       current.cancel();
@@ -40,7 +47,7 @@ export function createEyeMotion(lid, reduced, poses, doc = document) {
   return {
     reset() { if (!destroyed) reset(); },
     setActive(value) { if (!destroyed && value !== active) { active = value; reset(); } },
-    react(kind) { if (["headpat", "nuzzle", "shy", "tickle", "cuddle"].includes(kind)) play(kind); },
+    react(kind) { if (["headpat", "nuzzle", "shy", "tickle", "cuddle", "blue-secret"].includes(kind)) play(kind); },
     destroy() {
       if (destroyed) return;
       destroyed = true;

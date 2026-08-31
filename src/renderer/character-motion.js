@@ -20,7 +20,14 @@ export function createCharacterMotion(svg, parts, definition, reduced) {
     path === null ? transformFrames(gait) : gaitFrames(path, gait, definition.gait),
   ]));
   const eyes = createEyeMotion(parts.lid, reduced, definition.eyes, doc);
-  let animation, gait = "idle", active = true, destroyed = false;
+  let animation, gait = "idle", facing = 1, active = true, destroyed = false;
+
+  function faceMotion(x, nextGait) {
+    if (nextGait === "idle" || !Number.isFinite(x) || Math.abs(x) < .01) return;
+    facing = x < 0 ? -1 : 1;
+    svg.dataset.facing = facing < 0 ? "left" : "right";
+    svg.style.setProperty("--facing", String(facing));
+  }
 
   function animateShape() {
     animation?.cancel();
@@ -48,6 +55,8 @@ export function createCharacterMotion(svg, parts, definition, reduced) {
   doc.addEventListener("visibilitychange", visibilityChanged);
   reduced.addEventListener("change", animateShape);
   svg.dataset.gait = gait;
+  svg.dataset.facing = "right";
+  svg.style.setProperty("--facing", "1");
   svg.dataset.active = "true";
 
   return {
@@ -68,6 +77,8 @@ export function createCharacterMotion(svg, parts, definition, reduced) {
     },
     motion({ x = 0, y = 0, gait: nextGait = "idle", gaze } = {}) {
       if (destroyed) return;
+      if (!["walk", "run"].includes(nextGait)) nextGait = "idle";
+      faceMotion(x, nextGait);
       if (parts.pupil && definition.gaze) {
         if (gaze === null) {
           delete svg.dataset.looking;
@@ -80,13 +91,15 @@ export function createCharacterMotion(svg, parts, definition, reduced) {
           const magnitude = Math.hypot(look.x, look.y);
           if (Number.isFinite(magnitude) && (gaze || magnitude)) {
             svg.dataset.looking = "true";
-            const radius = definition.gaze.radius;
-            svg.style.setProperty("--gaze-x", (magnitude ? look.x / magnitude * radius : 0).toFixed(2) + "px");
-            svg.style.setProperty("--gaze-y", (magnitude ? look.y / magnitude * radius : 0).toFixed(2) + "px");
+            const radiusX = definition.gaze.radiusX || definition.gaze.radius;
+            const radiusY = definition.gaze.radiusY || definition.gaze.radius;
+            // Pupils live inside the mirrored artwork. Reverse their local X
+            // offset so the final on-screen gaze still points at the cursor.
+            svg.style.setProperty("--gaze-x", (magnitude ? look.x / magnitude * radiusX * facing : 0).toFixed(2) + "px");
+            svg.style.setProperty("--gaze-y", (magnitude ? look.y / magnitude * radiusY : 0).toFixed(2) + "px");
           }
         }
       }
-      if (!["walk", "run"].includes(nextGait)) nextGait = "idle";
       if (nextGait !== gait) {
         gait = nextGait; svg.dataset.gait = gait; animateShape();
       }

@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("bluepet", {
   dismissChat: () => ipcRenderer.send("chat:dismiss"),
   exitGame: () => ipcRenderer.send("game:exit"),
   focusPet: () => ipcRenderer.send("pet:focus"),
+  setPetHover: (hovered) => ipcRenderer.send("pet:hover", hovered === true),
   dragPet: (request) => ipcRenderer.send("pet:drag", request),
   onDragEnd: (callback) => ipcRenderer.on("pet:drag-end", callback),
   onState: (callback) => ipcRenderer.on("pet:state", (_event, state) => callback(state)),

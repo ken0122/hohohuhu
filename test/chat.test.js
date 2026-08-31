@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {askClaude} from "../src/chat.js";
+import {askClaude, chatSystemPrompt} from "../src/chat.js";
 import {deepseekCredentials} from "../src/chat-provider.js";
+import { BLACK_CAT_PROFILE } from "../src/character-profile.js";
 const provider=async()=>({url:"https://api.deepseek.com/anthropic/v1/messages",key:"test-only-key"});
 test("chat explicitly requests Flash with thinking disabled, low effort and no tools",async()=>{
   const reply=await askClaude("  你好  ",{provider,request:async(url,options)=>{
@@ -13,6 +14,16 @@ test("chat explicitly requests Flash with thinking disabled, low effort and no t
     return Response.json({content:[{type:"thinking",thinking:"not displayed"},{type:"text",text:"蓝".repeat(100)}]});
   }});
   assert.equal([...reply].length,50);assert.ok(!reply.includes("displayed"));
+});
+test("chat prompt follows the selected trusted character persona", async () => {
+  assert.match(chatSystemPrompt(BLACK_CAT_PROFILE.persona), /黑猫/);
+  assert.match(chatSystemPrompt(BLACK_CAT_PROFILE.persona), /克制/);
+  await askClaude("你好", { persona: BLACK_CAT_PROFILE.persona, provider, request: async (_url, options) => {
+    const body = JSON.parse(options.body);
+    assert.match(body.system, /黑猫/);
+    assert.doesNotMatch(body.system, /蓝色单眼/);
+    return Response.json({ content: [{ type: "text", text: "……你好。" }] });
+  }});
 });
 test("credential routing never pairs an unrelated provider key with DeepSeek",()=>{
   for(const base of ["https://ark.cn-beijing.volces.com/api/plan","https://api.deepseek.com.evil.test","http://api.deepseek.com"])
