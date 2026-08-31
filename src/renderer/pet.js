@@ -12,6 +12,10 @@ const speech = document.querySelector(".speech");
 const sendButton = form.querySelector("button[type='submit']");
 const pet = document.querySelector("#pet");
 const hint = document.querySelector("#pet-hint");
+function setHint(message = "") {
+  hint.textContent = message;
+  window.bluepet.setPetHint(message);
+}
 const characterHost = document.querySelector("#character");
 const character = await createMascot(characterHost);
 const interaction = createInteractionPolicy(() => character.definition);
@@ -28,9 +32,9 @@ function applyCharacterPresentation() {
 }
 applyCharacterPresentation();
 characterHost.addEventListener("character-mounted", applyCharacterPresentation);
-window.addEventListener("pagehide", () => character.destroy(), { once: true });
+window.addEventListener("pagehide", () => { setHint(); character.destroy(); }, { once: true });
 let mode = "dodge", chatOpen = false, near = false, pending = false;
-let reactionTimer, hintTimer, hoverTimer, lastReaction = 0;
+let reactionTimer, hoverTimer, lastReaction = 0;
 let moving = false, holdTimer, pressPoint, suppressClick = false;
 const gesture = createStrokeGesture({ getParts: () => character.definition.interactionParts || [] });
 let visible = false, hovering = false, idleTimer, idleFinish, idleHintTimer, idleCount = 0;
@@ -61,7 +65,7 @@ function stopIdle() {
   clearTimeout(idleHintTimer); idleHintTimer = undefined;
   if (body.dataset.reaction?.startsWith("idle-") || hint.dataset.idle === "true") {
     delete hint.dataset.idle;
-    delete body.dataset.reaction; hint.textContent = ""; character.reset();
+    delete body.dataset.reaction; setHint(); character.reset();
   }
 }
 function scheduleIdle() {
@@ -72,7 +76,7 @@ function scheduleIdle() {
     body.dataset.reaction = idle.kind;
     character.react(idle.kind);
     hint.dataset.idle = "true";
-    hint.textContent = idle.message;
+    setHint(idle.message);
     if (idle.kind === "idle-look") character.motion({ x: ++idleCount % 2 ? -1 : 1, y: -.2 });
     idleFinish = setTimeout(() => {
       idleFinish = undefined;
@@ -80,7 +84,7 @@ function scheduleIdle() {
       idleHintTimer = setTimeout(() => {
         idleHintTimer = undefined;
         delete hint.dataset.idle;
-        hint.textContent = "";
+        setHint();
         scheduleIdle();
       }, IDLE_BUBBLE_HOLD_MS);
     }, idle.duration);
@@ -94,18 +98,17 @@ function playReaction(selected) {
   if (!selected) return;
   stopIdle();
   clearTimeout(reactionTimer);
-  clearTimeout(hintTimer);
   clearTimeout(hoverTimer);
   body.dataset.reaction = selected.kind;
   lastReaction = performance.now();
   character.react(selected.kind);
-  hint.textContent = selected.message;
+  setHint(selected.message);
   if (selected.easterEgg) body.dataset.easterEgg = selected.easterEgg;
   reactionTimer = setTimeout(() => {
     delete body.dataset.reaction;
     delete body.dataset.easterEgg;
     character.react(null);
-    hint.textContent = "";
+    setHint();
     scheduleIdle();
   }, selected.duration);
 }
@@ -113,12 +116,12 @@ function react(intent) { playReaction(interaction.reaction(intent)); }
 function resetReaction() {
   stopIdle();
   clearTimeout(holdTimer); pressPoint = undefined; suppressClick = false;
-  clearTimeout(reactionTimer); clearTimeout(hoverTimer); clearTimeout(hintTimer);
+  clearTimeout(reactionTimer); clearTimeout(hoverTimer);
   delete body.dataset.reaction;
   delete body.dataset.easterEgg;
   character.react(null);
   body.classList.remove("is-affectionate");
-  near = false; hovering = false; hint.textContent = ""; gesture.reset();
+  near = false; hovering = false; setHint(); gesture.reset();
 }
 function proximity({ near: isNear, x, y }) {
   if (mode !== "pet" || chatOpen || moving || drag.pressed) return;
@@ -144,11 +147,6 @@ window.bluepet.onState(state => {
   scheduleIdle();
   if (chatOpen && state.visible) setTimeout(() => { if (chatOpen) input.focus(); }, 60);
   if (changedChat && !chatOpen && !pending) input.value = "";
-  if (changedMode && mode === "pet" && !chatOpen && state.visible) {
-    hint.textContent = "↑ ↓ ← → 移动 · 长按抱抱";
-    clearTimeout(hintTimer);
-    hintTimer = setTimeout(() => { hint.textContent = ""; }, 2500);
-  }
 });
 window.bluepet.onPetMotion(motion => {
   if (drag.pressed) return;

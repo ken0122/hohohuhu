@@ -757,6 +757,9 @@ try {
     assert.equal(getRuntime().tray.listenerCount("click"),0);
     assert.ok(getRuntime().tray.getBounds().width>0);
     assert.deepEqual(getRuntime().trayMenu.items.filter(item=>item.type==="radio").map(item=>item.id),["dodge","pet","pacman"]);
+    const petMode=getRuntime().trayMenu.getMenuItemById("pet");
+    assert.match(petMode.label,/ⓘ$/);assert.equal(petMode.toolTip,"拖动换位置 · 长按抱抱 · 悬停摸头挠肚肚 · 方向键移动");
+    assert.equal(await evaluate("document.querySelector('.pet').hasAttribute('title')"),false,"operation help no longer covers the pet as an HTML tooltip");
   });
   await check("three global shortcuts registered; menu cannot double-register accelerators", async () => {
     assert.ok(globalShortcut.isRegistered("Control+Alt+B"));
@@ -911,12 +914,26 @@ try {
     getRuntime().trayMenu.emit("menu-will-show",{});
     await evaluate("document.querySelector('.pet').click()");
     assert.equal(await evaluate("document.body.dataset.reaction"),"hop");
-    const hintStyle=await evaluate("(()=>{const h=document.querySelector('#pet-hint'),s=getComputedStyle(h),tail=getComputedStyle(h,'::before');return {text:h.textContent,background:s.backgroundColor,color:s.color,border:s.borderTopWidth,shadow:s.boxShadow,tail:tail.content};})()");
+    await until(()=>getRuntime().hintWindow?.isVisible());
+    const hintWin=getRuntime().hintWindow;
+    const hintStyle=await hintWin.webContents.executeJavaScript("(()=>{const h=document.querySelector('#pet-hint'),s=getComputedStyle(h),tail=getComputedStyle(h,'::before');return {text:h.textContent,width:h.getBoundingClientRect().width,background:s.backgroundColor,color:s.color,border:s.borderTopWidth,shadow:s.boxShadow,tail:tail.content};})()");
     assert.ok(hintStyle.text.length>0);assert.equal(hintStyle.background,"rgb(255, 253, 244)");
     assert.equal(hintStyle.color,"rgb(23, 35, 75)");assert.equal(hintStyle.border,"2px");
     assert.notEqual(hintStyle.shadow,"none");assert.notEqual(hintStyle.tail,"none");
+    const petBounds=getRuntime().petWindow.getBounds(),shortBounds=hintWin.getBounds();
+    assert.equal(petBounds.y+39-(shortBounds.y+shortBounds.height-3),2,"bubble tip stays two pixels above the pet head");
+    await evaluate("window.bluepet.setPetHint('叮叮叮，今天也亮起来！')");
+    await until(()=>getRuntime().hintMessage==='叮叮叮，今天也亮起来！');await delay(80);
+    const longHint=await hintWin.webContents.executeJavaScript(`(()=>{const h=document.querySelector('#pet-hint'),text=h.firstChild,rows=new Map();for(let i=0;i<text.length;i++){const range=document.createRange();range.setStart(text,i);range.setEnd(text,i+1);const top=Math.round(range.getBoundingClientRect().top);rows.set(top,(rows.get(top)||0)+1);}return {width:h.getBoundingClientRect().width,maxCharactersPerLine:Math.max(...rows.values()),lines:rows.size};})()`);
+    const longBounds=hintWin.getBounds();
+    assert.ok(longHint.width>hintStyle.width,"long interaction copy expands the bubble");
+    assert.ok(longHint.maxCharactersPerLine<=6,"interaction copy uses no more than six characters per line");
+    assert.ok(longHint.lines>=2,"long interaction copy wraps instead of overflowing");
+    assert.ok(longBounds.height>shortBounds.height,"long copy grows upward in its own native window");
+    assert.equal(longBounds.y+longBounds.height,shortBounds.y+shortBounds.height,"copy length never moves the bubble tip down onto the pet");
     await delay(80);
-    await writeFile(path.resolve("work/pet-cartoon-bubble.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
+    await writeFile(path.resolve("work/pet-cartoon-bubble.png"),(await hintWin.webContents.capturePage()).toPNG());
+    await evaluate("window.bluepet.setPetHint('')");await until(()=>!hintWin.isVisible());
     getRuntime().trayMenu.emit("menu-will-close",{});
   });
   await check("Pet idle variety maps to distinct gentle motions",async()=>{
@@ -1033,7 +1050,8 @@ try {
     assert.ok(performance.now()-start>=7500,"autonomous motion keeps a quiet gap");
     assert.equal(await evaluate("document.body.dataset.reaction"),"idle-look");
     assert.ok(await evaluate("document.querySelector('#pet-hint').textContent.length>0"),"idle gesture carries a short utterance");
-    assert.equal(await evaluate("getComputedStyle(document.querySelector('#pet-hint')).backgroundColor"),"rgb(255, 253, 244)");
+    await until(()=>getRuntime().hintWindow?.isVisible());
+    assert.equal(await getRuntime().hintWindow.webContents.executeJavaScript("getComputedStyle(document.querySelector('#pet-hint')).backgroundColor"),"rgb(255, 253, 244)");
     await writeFile(path.resolve("work/pet-idle-look.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
     await until(()=>evaluate("document.body.dataset.reaction===undefined"),2000);
     assert.ok(await evaluate("document.querySelector('#pet-hint').textContent.length>0"),"idle bubble lingers after the gesture rests");

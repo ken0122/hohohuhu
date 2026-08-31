@@ -48,6 +48,12 @@ import { arriveAt, launchVelocity } from "./mode-motion.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PET_SIZE = PET_FRAME_SIZE;
+const PET_HEAD_TOP_OFFSET = 39;
+const HINT_HEAD_GAP = 2;
+const HINT_TAIL_INSET = 3;
+const HINT_CHARACTERS_PER_LINE = 6;
+const HINT_LINE_HEIGHT = 14;
+const HINT_CHROME_HEIGHT = 25;
 app.setName("呼噜呼噜");
 const HIDE_SHORTCUT = process.env.BLUEPET_HIDE_SHORTCUT || "Control+Alt+B";
 const CHAT_SHORTCUT = process.env.BLUEPET_CHAT_SHORTCUT || "Control+Alt+Space";
@@ -57,7 +63,7 @@ const requestedMode = normalizeMode(
 );
 const initialMode = Object.values(MODES).includes(requestedMode) ? requestedMode : MODES.DODGE;
 const state = { mode: initialMode, manualHidden: false, chatOpen: false, controlActive: false };
-let petWindow, gameWindow, settingsWindow, apiSettingsStore, characterLibrary, tray, trayMenu, loop;
+let petWindow, hintWindow, gameWindow, settingsWindow, apiSettingsStore, characterLibrary, tray, trayMenu, loop;
 let selectedCharacter = BLUE_ONE_EYE;
 let petReady = false,
   gameReady = false,
@@ -72,6 +78,8 @@ let reducedMotion = false;
 let nativePosition;
 let dragSession;
 let petHovered = false;
+let hintReady = false,
+  hintMessage = "";
 const dodge = createDodgeMotion();
 const cursorAttention = createCursorAttention();
 const petReturn = createPetReturnTracker();
@@ -83,6 +91,13 @@ let hideAnimation,
 const keys = new Set();
 const webPreferences = {
   preload: path.join(dirname, "preload.cjs"),
+  contextIsolation: true,
+  sandbox: true,
+  nodeIntegration: false,
+  backgroundThrottling: false,
+};
+const hintWebPreferences = {
+  preload: path.join(dirname, "hint-preload.cjs"),
   contextIsolation: true,
   sandbox: true,
   nodeIntegration: false,
@@ -159,6 +174,45 @@ function movePetWindow() {
   if (nativePosition?.x === x && nativePosition?.y === y) return;
   petWindow.setPosition(x, y, false);
   nativePosition = { x, y };
+  syncHint();
+}
+
+function hintHeight(message) {
+  const lines = Math.max(1, Math.ceil(Array.from(message).length / HINT_CHARACTERS_PER_LINE));
+  return lines * HINT_LINE_HEIGHT + HINT_CHROME_HEIGHT;
+}
+function hintFrame(message) {
+  const height = hintHeight(message);
+  return {
+    x: Math.round(position.x),
+    y: Math.round(position.y + PET_HEAD_TOP_OFFSET - HINT_HEAD_GAP - height + HINT_TAIL_INSET),
+    width: PET_SIZE,
+    height,
+  };
+}
+function syncHint() {
+  if (!hintReady || !hintWindow || hintWindow.isDestroyed()) return;
+  const visible = Boolean(
+    hintMessage &&
+      state.mode === MODES.PET &&
+      !state.chatOpen &&
+      !state.manualHidden &&
+      petWindow?.isVisible(),
+  );
+  if (!visible) {
+    hintWindow.hide();
+    return;
+  }
+  hintWindow.setBounds(hintFrame(hintMessage), false);
+  hintWindow.webContents.send("hint:message", hintMessage);
+  raiseWindow(hintWindow);
+  hintWindow.showInactive();
+}
+function setHintMessage(message) {
+  if (typeof message !== "string" || message.length > 50 || /[\x00-\x1f\x7f]/.test(message)) return;
+  hintMessage = message;
+  if (message && (!hintWindow || hintWindow.isDestroyed())) createHintWindow();
+  syncHint();
 }
 function stopControl() {
   keys.clear();
@@ -301,6 +355,7 @@ function syncPet({ focus = false } = {}) {
       dispatch("focus");
     }
   } else petWindow.hide();
+  syncHint();
 }
 export function restorePetFrame() {
   interruptInteraction();
@@ -603,7 +658,7 @@ function createPetWindow() {
   bindEditingShortcuts(win);
   win.webContents.on("before-input-event", controlInput);
   win.on("blur", () => interruptInteraction({ preserveMotion: true }));
-  win.webContents.on("did-start-loading", () => { petHovered = false; endPetDrag(); });
+  win.webContents.on("did-start-loading", () => { petHovered = false; setHintMessage(""); endPetDrag(); });
   win.on("focus", () => dispatch("focus"));
   win.webContents.on("did-finish-load", () => {
     petReady = true;
@@ -624,6 +679,45 @@ function createPetWindow() {
     }
   });
   win.loadFile(path.join(dirname, "renderer/pet.html"));
+}
+function createHintWindow() {
+  hintReady = false;
+  const win = new BrowserWindow({
+    ...hintFrame(hintMessage),
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    focusable: false,
+    hasShadow: false,
+    webPreferences: hintWebPreferences,
+  });
+  hintWindow = win;
+  raiseWindow(win);
+  win.setIgnoreMouseEvents(true, { forward: true });
+  win.webContents.on("did-finish-load", () => {
+    if (hintWindow !== win) return;
+    hintReady = true;
+    syncHint();
+  });
+  win.webContents.on("render-process-gone", () => {
+    if (!quitting && hintWindow === win) {
+      hintReady = false;
+      win.reload();
+    }
+  });
+  win.on("closed", () => {
+    if (hintWindow === win) {
+      hintWindow = undefined;
+      hintReady = false;
+      if (!quitting && hintMessage) createHintWindow();
+    }
+  });
+  win.loadFile(path.join(dirname, "renderer/hint.html"));
 }
 function showApiSettings() {
   interruptInteraction({ preserveMotion: true });
@@ -692,7 +786,11 @@ function rebuildTrayMenu() {
       [MODES.PACMAN, "Pac-Man · 吃颗豆豆"],
     ].map(([value, label]) => ({
       id: value,
-      label,
+      label: value === MODES.PET ? `${label}  ⓘ` : label,
+      ...(value === MODES.PET ? {
+        accessibilityLabel: `${label}，有操作说明`,
+        toolTip: "拖动换位置 · 长按抱抱 · 悬停摸头挠肚肚 · 方向键移动",
+      } : {}),
       type: "radio",
       checked: state.mode === value,
       click: () => setMode(value),
@@ -817,6 +915,9 @@ ipcMain.on("pet:hover", (event, value) => {
     velocity = { x: 0, y: 0 };
   }
 });
+ipcMain.on("pet:hint", (event, message) => {
+  if (fromPet(event)) setHintMessage(message);
+});
 ipcMain.on("pet:drag", handlePetDrag);
 ipcMain.on("pet:hide-done", (event, id) => {
   if (
@@ -925,6 +1026,8 @@ export function getRuntime() {
     modeTransition,
     petHome,
     petWindow,
+    hintWindow,
+    hintMessage,
     gameWindow,
     settingsWindow,
     characterWindow: characterLibrary?.window,
