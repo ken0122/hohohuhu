@@ -122,8 +122,8 @@ async function mount(entry) {
   characters = Array.from(document.querySelectorAll(".character-host"), host => mountCharacter(host, document.importNode(parsed.documentElement, true), definition, { eyelids: host.id !== "game" }));
   paused = false; previewGait = "idle"; $("#pause").textContent = "暂停预览"; $("#pause").setAttribute("aria-pressed", "false");
   document.querySelectorAll("[data-gait]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.gait === "idle")));
-  $("#personality").textContent = `${persona.summary} · ${persona.traits.join("、")}`;
-  $("#easter-egg").textContent = `专属彩蛋：${easterEgg.label} · ${easterEgg.description}`;
+  $("#personality").textContent = persona.traits.join(" · ");
+  $("#easter-egg").textContent = `彩蛋 · ${easterEgg.label}`;
   $("#egg-preview").dataset.reaction = easterEgg.reaction.motion;
   $("#egg-preview").dataset.duration = String(easterEgg.reaction.duration);
   $("#capabilities").textContent = entry.id === BLUE_ONE_EYE.id ? "原有下摆形变与眼睛动作。" : entry.id === BLACK_CAT.id ? "整体起伏与轻跳；眼睛会跟随，尾巴保持静态。" : entry.id === SUNNY_YELLOW.id ? "整体起伏与轻跳；珊瑚色眼睛会跟随，尾巴保持静态。" : entry.analysis ? `整体动作；已识别 ${entry.analysis.parts.length} 个可修正互动部件。` : "整体起伏与轻跳；没有部件分析。";
@@ -131,10 +131,10 @@ async function mount(entry) {
 async function showEntry(item) {
   const entry = await request(api.source(item.id));
   await mount(entry); selected = item; previewEntry = entry; draft = undefined; clearOriginal();
-  $("#draft-fields").hidden = true; $("#name").textContent = item.name;
-  $("#selection-status").textContent = item.id === catalog.selected ? "正在使用" : `预览中 · 当前角色：${catalog.items.find(entry => entry.id === catalog.selected)?.name}`;
+  $("#draft-fields").hidden = true; $("#art-caption").hidden = true; $("#name").textContent = item.name;
+  $("#selection-status").textContent = item.id === catalog.selected ? "当前角色" : `预览中 · 当前角色 ${catalog.items.find(entry => entry.id === catalog.selected)?.name}`;
   renderCatalog();
-  status(catalog.warning || (item.id === catalog.selected ? "这个角色正在陪你。" : "还没切换，点“使用角色”才会生效。"), Boolean(catalog.warning));
+  status(catalog.warning || "", Boolean(catalog.warning));
 }
 function convert(bytes) {
   return new Promise((resolve, reject) => {
@@ -167,7 +167,7 @@ $("#choose").addEventListener("click", () => operation(async () => {
   clearOriginal(); originalUrl = URL.createObjectURL(new Blob([input.bytes], { type: input.mime }));
   const image = new Image(); image.id = "original-image"; image.alt = "导入的原图"; image.src = originalUrl;
   $("#original-slot").replaceChildren(image); $("#original").hidden = false;
-  $("#name").textContent = "添加新角色"; $("#character-name").value = input.name; $("#draft-fields").hidden = false;
+  $("#name").textContent = "添加新角色"; $("#character-name").value = input.name; $("#draft-fields").hidden = false; $("#art-caption").hidden = false;
   renderAnalysis(analysis);
   $("#selection-status").textContent = `不会覆盖 · 当前角色：${catalog.items.find(entry => entry.id === catalog.selected)?.name}`;
   api.setDirty(true);

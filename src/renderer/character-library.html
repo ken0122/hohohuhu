@@ -10,20 +10,14 @@
   <script type="module" src="character-library.js"></script>
 </head>
 <body>
-  <!-- THESIS: Choose a living character, understand its temperament, try its motion, then explicitly apply it.
-  OWN-WORLD: Existing milk-white, ink-blue, system type and blue action buttons.
-  STORY: Browse local characters, see how each one behaves, preview it at real sizes, then choose deliberately.
-  FIRST VIEWPORT: A compact left list; right artwork stage followed by temperament, real-size samples, motion and one apply action.
-  FORM: Narrow extension of the approved SVG preview, code-led; no identity or concept change.
-  FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance -->
-  <header><div><h1>角色</h1><p>选角色、试动作，再决定谁陪你。</p></div><button id="choose">添加角色…</button></header>
+  <header><h1>角色</h1><button id="choose">添加角色…</button></header>
   <main>
-    <nav aria-label="角色列表"><h2>我的角色</h2><div id="catalog"></div><p class="privacy">角色只存在这台 Mac。<br />添加图片时会发给 DeepSeek 分析。</p></nav>
+    <nav aria-label="角色列表"><div id="catalog"></div></nav>
     <section class="detail" aria-label="角色预览">
-      <h2 id="name">正在加载…</h2><p id="selection-status" class="selection-status">正在读取当前角色…</p>
+      <div class="detail-heading"><h2 id="name">正在加载…</h2><p id="selection-status" class="selection-status">正在读取当前角色…</p></div>
       <div class="stage">
         <figure id="original" hidden><span id="original-slot"></span><figcaption>原图</figcaption></figure>
-        <figure><div id="large" class="character-host"></div><figcaption id="art-caption">处理后的角色</figcaption></figure>
+        <figure><div id="large" class="character-host"></div><figcaption id="art-caption" hidden>处理后</figcaption></figure>
       </div>
       <div id="draft-fields" hidden>
         <label for="character-name">角色名称</label><input id="character-name" maxlength="40" autocomplete="off" />
@@ -46,17 +40,18 @@
           </div>
           <div class="parts-heading"><strong>互动部件</strong><button id="add-part" type="button">添加部件</button></div>
           <div id="parts-list"></div>
-          <p>识别结果可以改。坐标按图片宽高取 0–1。</p>
+          <p>坐标范围为 0–1。</p>
         </section>
       </div>
       <div class="profile-summary" aria-label="角色气质与彩蛋"><p id="personality"></p><p id="easter-egg"></p></div>
-      <div class="sizes"><div><div id="desktop" class="character-host"></div><span>桌面 84px</span></div><div><div id="game" class="character-host"></div><span>游戏 64px</span></div><p id="capabilities">形象与动作独立控制。</p></div>
-      <fieldset id="motions" disabled><legend>试试动作</legend><div class="motion-row"><div class="gait-group" role="group" aria-label="步态"><button data-gait="idle" aria-pressed="true">静止</button><button data-gait="walk" aria-pressed="false">行走</button><button data-gait="run" aria-pressed="false">奔跑</button></div><div class="motion-secondary"><button data-reaction="hop">轻跳</button><button id="egg-preview">预览彩蛋</button><button id="pause" aria-pressed="false">暂停预览</button></div></div></fieldset>
-      <p id="motion-status" class="motion-status">把指针移到大图上，支持眼神的角色会看向你。</p>
-      <p id="status" role="status" aria-live="polite">正在读取角色…</p>
-      <div class="manage-actions"><button id="edit" hidden>编辑角色</button><button id="remove" class="danger" hidden>删除角色…</button></div>
+      <div class="preview-tools">
+        <div class="sizes" aria-label="实际尺寸"><div><div id="desktop" class="character-host"></div><span>桌面</span></div><div><div id="game" class="character-host"></div><span>游戏</span></div><p id="capabilities" class="visually-hidden">形象与动作独立控制。</p></div>
+        <fieldset id="motions" disabled><legend>动作</legend><div class="motion-row"><div class="gait-group" role="group" aria-label="步态"><button data-gait="idle" aria-pressed="true">静止</button><button data-gait="walk" aria-pressed="false">行走</button><button data-gait="run" aria-pressed="false">奔跑</button></div><div class="motion-secondary"><button data-reaction="hop">轻跳</button><button id="egg-preview">彩蛋</button><button id="pause" aria-pressed="false">暂停</button></div></div></fieldset>
+      </div>
+      <p id="motion-status" class="visually-hidden" aria-live="polite"></p>
+      <div class="detail-meta"><p id="status" role="status" aria-live="polite"></p><div class="manage-actions"><button id="edit" hidden>编辑</button><button id="remove" class="danger" hidden>删除…</button></div></div>
     </section>
   </main>
-  <footer><p>一张图只放一个完整角色，背景透明或纯色。<br />支持 PNG/JPG，10 MB、约 100 万像素以内。</p><div class="actions"><button id="cancel" hidden>取消</button><button id="close">关闭</button><button id="apply" class="primary" disabled>使用角色</button></div></footer>
+  <footer><div class="actions"><button id="cancel" hidden>取消</button><button id="close">关闭</button><button id="apply" class="primary" disabled>使用角色</button></div></footer>
 </body>
 </html>
