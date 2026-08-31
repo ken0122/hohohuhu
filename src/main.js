@@ -21,6 +21,8 @@ import {
   chatMotionBounds,
   cursorInSpeech,
   cursorInPetSprite,
+  createCursorAttention,
+  createPetReturnTracker,
   controlVelocity,
   editingAction,
   fitPet,
@@ -71,6 +73,8 @@ let nativePosition;
 let dragSession;
 let petHovered = false;
 const dodge = createDodgeMotion();
+const cursorAttention = createCursorAttention();
+const petReturn = createPetReturnTracker();
 let dodgeMotion;
 let modeTransition, petHome;
 let hideAnimation,
@@ -111,15 +115,16 @@ function send(channel, payload) {
 function sendPetMotion(motion, cursor = screen.getCursorScreenPoint()) {
   if ([MODES.DODGE, MODES.PET].includes(state.mode) && selectedCharacter.gaze && petReady && petWindow && !petWindow.isDestroyed()) {
     const frame = petWindow.getBounds();
+    const watching = state.mode !== MODES.PET || cursorAttention.sample(cursor, performance.now());
     // Selected character's gaze anchor, mapped into the actual native frame.
     // Gaze is independent of escape velocity, including when chat/menu freezes movement.
     motion = {
       ...motion,
-      gaze: {
+      gaze: watching ? {
         x: cursor.x - (frame.x + (frame.width - PET_SPRITE_SIZE) / 2 + selectedCharacter.gaze.x * PET_SPRITE_SIZE),
         y:
           cursor.y - (frame.y + frame.height - 7 - PET_SPRITE_SIZE + selectedCharacter.gaze.y * PET_SPRITE_SIZE),
-      },
+      } : null,
     };
   }
   send("pet:motion", motion);
@@ -169,6 +174,7 @@ function interruptInteraction({ preserveMotion = false } = {}) {
   endPetDrag();
   stopControl();
   dodge.reset();
+  petReturn.cancel();
   if (!preserveMotion) cancelModeTransition();
 }
 function handlePetDrag(event, request) {
@@ -403,13 +409,13 @@ export function setMode(nextMode) {
   if (!Object.values(MODES).includes(nextMode)) return;
   cancelHide();
   const previousMode = state.mode;
+  if (previousMode !== nextMode) cursorAttention.reset();
   const smooth =
     previousMode !== nextMode &&
     [previousMode, nextMode].every((mode) => mode === MODES.PET || mode === MODES.DODGE) &&
     !state.manualHidden &&
     !state.chatOpen &&
     petWindow?.isVisible();
-  if (previousMode === MODES.PET && !modeTransition && !state.chatOpen) petHome = { ...position };
   const momentum = { ...velocity };
   interruptInteraction({ preserveMotion: true });
   closeGame();
@@ -455,6 +461,14 @@ function tick() {
     return;
   }
   const cursor = screen.getCursorScreenPoint();
+  let returnState = petReturn.state(now);
+  if (
+    modeTransition?.kind === "pet-dodge-return" &&
+    Math.hypot(cursor.x - position.x - PET_SIZE / 2, cursor.y - position.y - PET_SIZE / 2) < 190
+  ) {
+    returnState = petReturn.sample(true, now);
+    cancelModeTransition();
+  }
   if (menuOpen) {
     dodge.reset();
     sendPetMotion({ x: 0, y: 0, gait: "idle" }, cursor);
@@ -474,12 +488,29 @@ function tick() {
   const bounds = currentDisplay().workArea;
   const reduced = reducedMotion;
   if (reduced && modeTransition) cancelModeTransition();
+  if (
+    state.mode === MODES.PET && returnState.ready && !modeTransition && !keys.size && !petHovered
+  ) {
+    dodge.reset();
+    dodgeMotion = undefined;
+    const target = fitPet(returnState.origin, bounds);
+    if (reduced) {
+      position = target;
+      velocity = { x: 0, y: 0 };
+      petReturn.cancel();
+      returnState = petReturn.state(now);
+    } else modeTransition = { target, kind: "pet-dodge-return" };
+  }
   let arrivedPosition;
   if (modeTransition?.target) {
+    const transition = modeTransition;
     const motion = arriveAt(position, velocity, modeTransition.target, dt, bounds);
     arrivedPosition = motion.position;
     velocity = motion.velocity;
-    if (motion.done) modeTransition = undefined;
+    if (motion.done) {
+      modeTransition = undefined;
+      if (transition.kind === "pet-dodge-return") petReturn.cancel();
+    }
   } else if (state.mode === MODES.DODGE || petShouldAvoid({
     mode: state.mode, chatOpen: state.chatOpen, manualControl: keys.size > 0,
     hovered: petHovered || cursorInPetSprite(cursor, position),
@@ -495,6 +526,11 @@ function tick() {
       reducedMotion: reduced,
       allowWander: state.mode === MODES.DODGE && !state.chatOpen,
     });
+    const petAvoiding = state.mode === MODES.PET && Math.hypot(dodgeMotion.velocity.x, dodgeMotion.velocity.y) > .01;
+    if (petAvoiding && !petReturn.active) {
+      returnState = petReturn.begin(petHome || position, now);
+    }
+    if (state.mode === MODES.PET && petReturn.active) returnState = petReturn.sample(petAvoiding, now);
     velocity = modeTransition
       ? launchVelocity(velocity, dodgeMotion.velocity, dt)
       : dodgeMotion.velocity;
@@ -506,11 +542,12 @@ function tick() {
     dodge.reset();
     dodgeMotion = undefined;
     velocity = keys.size ? controlVelocity(keys) : { x: 0, y: 0 };
+    if (state.mode === MODES.PET && petReturn.active) returnState = petReturn.sample(false, now);
   }
   position =
     arrivedPosition ||
     fitPet({ x: position.x + velocity.x * dt, y: position.y + velocity.y * dt }, bounds, PET_SIZE);
-  if (state.mode === MODES.PET && !modeTransition) petHome = { ...position };
+  if (state.mode === MODES.PET && keys.size && !modeTransition) petHome = { ...position };
   movePetWindow();
   const moving = Math.hypot(velocity.x, velocity.y) > 0;
   sendPetMotion(
@@ -537,6 +574,7 @@ function controlInput(event, input) {
   // Let Chromium receive keydown: cancelling it here can suppress the matching
   // native keyup on macOS. The renderer suppresses only scrolling/default actions.
   if (input.type === "keyDown") {
+    petReturn.cancel();
     cancelModeTransition();
     keys.add(input.key);
     dispatch("focus");
@@ -773,6 +811,8 @@ ipcMain.on("pet:hover", (event, value) => {
   if (!fromPet(event)) return;
   petHovered = value === true;
   if (petHovered && state.mode === MODES.PET) {
+    petReturn.cancel();
+    if (modeTransition?.kind === "pet-dodge-return") cancelModeTransition();
     dodge.reset();
     velocity = { x: 0, y: 0 };
   }
@@ -896,6 +936,7 @@ export function getRuntime() {
     dragPending: Boolean(dragSession),
     petHovered,
     dodgeMotion,
+    petReturn: petReturn.state(performance.now()),
   };
 }
 export function shutdown(code = 0) {

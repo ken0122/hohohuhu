@@ -33,6 +33,8 @@
 .mascot-svg[data-reaction="poke"] .character-root, .mascot-svg.character-root[data-reaction="poke"] { animation: poke 500ms ease-out; }
 .mascot-svg[data-reaction="cuddle"] .character-root, .mascot-svg.character-root[data-reaction="cuddle"] { animation: cuddle 1.2s ease-in-out; }
 .mascot-svg[data-reaction="idle-stretch"] .character-root, .mascot-svg.character-root[data-reaction="idle-stretch"] { animation: idle-stretch 1.5s ease-in-out; }
+.mascot-svg[data-reaction="idle-bob"] .character-root, .mascot-svg.character-root[data-reaction="idle-bob"] { animation: idle-bob 1.3s cubic-bezier(.16,1,.3,1); }
+.mascot-svg[data-reaction="idle-sway"] .character-root, .mascot-svg.character-root[data-reaction="idle-sway"] { animation: idle-sway 1.6s ease-in-out; }
 .mascot-svg[data-character="blue-one-eye"][data-reaction="blue-secret"] .character-root { animation: blue-secret 1.1s cubic-bezier(.16,1,.3,1); }
 .mascot-svg[data-reaction="cat-secret"] .character-root,
 .mascot-svg.character-root[data-reaction="cat-secret"] { animation: cat-secret 1.5s cubic-bezier(.16,1,.3,1); }
@@ -46,6 +48,8 @@
 @keyframes poke { 0%,100% { transform: scale(1); } 28% { transform: translateY(1px) scale(1.07,.93); } 65% { transform: scale(.99,1.02); } }
 @keyframes cuddle { 0%,100% { transform: rotate(0) scale(1); } 35%,65% { transform: rotate(-4deg) scale(1.035,.97); } }
 @keyframes idle-stretch { 0%,100% { transform: scale(1) rotate(0); } 40% { transform: scale(.985,1.025) rotate(-1.5deg); } 70% { transform: scale(1.01,.995) rotate(1deg); } }
+@keyframes idle-bob { 0%,100% { transform: translateY(0) scale(1); } 18% { transform: translateY(1px) scale(1.035,.965); } 42% { transform: translateY(-5px) scale(.985,1.025); } 62% { transform: translateY(0) scale(1.025,.98); } 78% { transform: translateY(-2px) scale(.995,1.01); } }
+@keyframes idle-sway { 0%,100% { transform: rotate(0) translateY(0); } 24% { transform: rotate(-3deg) translateY(-1px); } 52% { transform: rotate(2.5deg) translateY(0); } 76% { transform: rotate(-1.5deg) translateY(-.5px); } }
 @keyframes blue-secret { 0%,100% { transform: scale(1); } 32% { transform: translateY(1px) scale(1.04,.96); } 72% { transform: translateY(-2px) scale(.98,1.02); } }
 @keyframes cat-secret { 0%,42% { transform: scale(1); } 48% { transform: scale(1.08,.86); } 68% { transform: translateY(-10px) rotate(-3deg) scale(.96,1.04); } 84% { transform: translateY(0) scale(1.05,.95); } 100% { transform: scale(1); } }
 @keyframes sunny-secret { 0%,100% { transform: translateY(0) rotate(0) scale(1); } 18% { transform: scale(1.08,.9); } 38% { transform: translateY(-7px) rotate(-4deg) scale(.96,1.05); } 58% { transform: translateY(0) rotate(2deg) scale(1.06,.94); } 74% { transform: translateY(-4px) rotate(3deg) scale(.98,1.03); } 90% { transform: translateY(0) scale(1.03,.97); } }

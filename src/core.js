@@ -85,6 +85,49 @@ export function gazeDirection(x, y) {
   return length ? { x: x / length, y: y / length } : { x: 0, y: 0 };
 }
 
+export function createCursorAttention(idleMs = 5000) {
+  let previous, movedAt;
+  return {
+    sample(cursor, now) {
+      if (!previous || cursor.x !== previous.x || cursor.y !== previous.y) {
+        previous = { x: cursor.x, y: cursor.y };
+        movedAt = now;
+        return true;
+      }
+      return now - movedAt <= idleMs;
+    },
+    reset() {
+      previous = undefined;
+      movedAt = undefined;
+    },
+  };
+}
+
+export function createPetReturnTracker(idleMs = 3000) {
+  let episode;
+  const snapshot = (now) => episode ? {
+    active: true,
+    avoiding: episode.stoppedAt === undefined,
+    ready: episode.stoppedAt !== undefined && now - episode.stoppedAt > idleMs,
+    origin: { ...episode.origin },
+  } : { active: false, avoiding: false, ready: false };
+  return {
+    begin(origin, now) {
+      if (!episode) episode = { origin: { ...origin }, stoppedAt: undefined };
+      return snapshot(now);
+    },
+    sample(avoiding, now) {
+      if (!episode) return snapshot(now);
+      if (avoiding) episode.stoppedAt = undefined;
+      else if (episode.stoppedAt === undefined) episode.stoppedAt = now;
+      return snapshot(now);
+    },
+    cancel() { episode = undefined; },
+    get active() { return Boolean(episode); },
+    state(now = 0) { return snapshot(now); },
+  };
+}
+
 export function controlVelocity(keys, speed = 300) {
   const x = Number(keys.has("ArrowRight")) - Number(keys.has("ArrowLeft"));
   const y = Number(keys.has("ArrowDown")) - Number(keys.has("ArrowUp"));

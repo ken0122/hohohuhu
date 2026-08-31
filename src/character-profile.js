@@ -3,7 +3,8 @@ const INTENTS = Object.freeze([
 ]);
 const MOTIONS = new Set([
   ...INTENTS,
-  "idle-look", "idle-stretch", "blue-secret", "cat-secret", "sunny-secret",
+  "idle-look", "idle-stretch", "idle-bob", "idle-sway",
+  "blue-secret", "cat-secret", "sunny-secret",
 ]);
 const ARCHETYPES = new Set(["shy", "proud", "cheerful", "calm", "curious", "mischievous"]);
 const VOICES = new Set(["soft", "reserved", "bright", "steady", "curious", "playful"]);
@@ -102,8 +103,10 @@ export const BLUE_ONE_EYE_PROFILE = validateCharacterProfile({
     dwell: { motion: "nuzzle", duration: 1100, messages: ["蹭蹭你", "再陪我一会儿"] },
   },
   idle: [
-    { motion: "idle-look", duration: 1500, messages: ["我在看看你有没有忙完"] },
-    { motion: "idle-stretch", duration: 1500, messages: ["悄悄伸个懒腰"] },
+    { motion: "idle-look", duration: 1500, messages: ["我看看…", "唔唔～"] },
+    { motion: "idle-stretch", duration: 1500, messages: ["嘿咻～", "伸个懒腰"] },
+    { motion: "idle-bob", duration: 1300, messages: ["呼噜…", "嗯哼～"] },
+    { motion: "idle-sway", duration: 1600, messages: ["晃呀晃～", "唔姆…"] },
   ],
   easterEgg: {
     id: "secret-double-blink", label: "只给你看的眨眼", description: "短时间连续摸头三次，会悄悄眨两次眼。",
@@ -131,8 +134,10 @@ export const BLACK_CAT_PROFILE = validateCharacterProfile({
     dwell: { motion: "nuzzle", duration: 900, messages: ["我只是刚好靠近", "再待一会儿也行"] },
   },
   idle: [
-    { motion: "idle-look", duration: 1400, messages: ["我在巡视桌面"] },
-    { motion: "idle-stretch", duration: 1700, messages: ["伸展一下而已"] },
+    { motion: "idle-look", duration: 1400, messages: ["巡视一下", "……唔"] },
+    { motion: "idle-stretch", duration: 1700, messages: ["伸展而已", "嗯——"] },
+    { motion: "idle-bob", duration: 1200, messages: ["喵呜…", "哼。"] },
+    { motion: "idle-sway", duration: 1500, messages: ["尾巴晃晃", "唔。"] },
   ],
   easterEgg: {
     id: "caught-caring", label: "被发现的在意", description: "短时间连续贴贴三次，会先装作没反应，再突然跳起来。",
@@ -160,8 +165,10 @@ export const SUNNY_YELLOW_PROFILE = validateCharacterProfile({
     dwell: { motion: "nuzzle", duration: 1000, messages: ["分你一点阳光", "一起暖一会儿"] },
   },
   idle: [
-    { motion: "idle-look", duration: 1300, messages: ["看看哪里需要一点阳光"] },
-    { motion: "idle-stretch", duration: 1450, messages: ["伸展一下小光芒"] },
+    { motion: "idle-look", duration: 1300, messages: ["看看四周～", "亮晶晶～"] },
+    { motion: "idle-stretch", duration: 1450, messages: ["嘿咻～", "伸展光芒"] },
+    { motion: "idle-bob", duration: 1250, messages: ["叮咚～", "蹦一下！"] },
+    { motion: "idle-sway", duration: 1500, messages: ["摇呀摇～", "啦啦～"] },
   ],
   easterEgg: {
     id: "triple-spark", label: "三连点亮", description: "短时间连续戳三次，会开心地闪跳两下。",
@@ -181,8 +188,10 @@ export const BASIC_PROFILE = validateCharacterProfile({
     dwell: { motion: "nuzzle", duration: 1000, messages: ["一起待一会儿吧", "我在这里"] },
   },
   idle: [
-    { motion: "idle-look", duration: 1500, messages: ["看看四周"] },
-    { motion: "idle-stretch", duration: 1500, messages: ["伸个懒腰"] },
+    { motion: "idle-look", duration: 1500, messages: ["看看四周", "唔嗯～"] },
+    { motion: "idle-stretch", duration: 1500, messages: ["嘿咻～", "伸个懒腰"] },
+    { motion: "idle-bob", duration: 1300, messages: ["呼噜…", "嗯哼～"] },
+    { motion: "idle-sway", duration: 1600, messages: ["晃一晃～", "唔姆…"] },
   ],
   easterEgg: {
     id: "hello-hop", label: "熟悉之后的招呼", description: "短时间连续摸头三次，会开心地跳一下。",

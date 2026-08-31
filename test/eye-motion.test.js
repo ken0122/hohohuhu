@@ -19,9 +19,9 @@ test("blinks and emotions always finish fully open, with no closed-eye hold", ()
   assert.equal(secret.at(-1).transform, OPEN_EYE);
   assert.equal(secret.filter(frame => frame.transform !== OPEN_EYE).length, 2);
 });
-test("autonomous motions have long quiet gaps and variable timing", () => {
+test("autonomous motions keep variable quiet gaps without feeling absent", () => {
   assert.equal(blinkDelay(() => 0), 3800);
   assert.equal(blinkDelay(() => 1), 7200);
-  assert.equal(idleDelay(() => 0), 12000);
-  assert.equal(idleDelay(() => 1), 22000);
+  assert.equal(idleDelay(() => 0), 8000);
+  assert.equal(idleDelay(() => 1), 15000);
 });

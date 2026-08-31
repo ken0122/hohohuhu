@@ -18,6 +18,8 @@ test("built-in profiles carry distinct bounded voices, reactions and declarative
   for (const profile of [BLUE_ONE_EYE_PROFILE, BLACK_CAT_PROFILE, SUNNY_YELLOW_PROFILE]) {
     assert.ok(profile.persona.traits.length <= 4);
     assert.ok(Object.values(profile.reactions).every(value => value.duration <= 2400 && value.messages.every(line => line.length <= 50)));
+    assert.deepEqual(profile.idle.map(item => item.motion), ["idle-look", "idle-stretch", "idle-bob", "idle-sway"]);
+    assert.ok(profile.idle.some(item => item.messages.some(line => /[～…。.]/.test(line))));
     assert.ok(profile.easterEgg.trigger.count >= 2);
   }
 });

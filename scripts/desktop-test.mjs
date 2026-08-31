@@ -677,7 +677,11 @@ try {
         assert.equal(await win.webContents.executeJavaScript("document.body.classList.contains('is-dissolving')"),true);
         const pixels=await win.webContents.executeJavaScript("(()=>{const c=document.querySelector('.hide-particles'),p=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<p.length;i+=4)if(p[i])n++;return n;})()");
         assert.ok(pixels>20,"real particle pixels are rendered");
-        if(mode==="pet") { await delay(80);await writeFile(path.resolve("work/huluhulu-hide.png"),(await win.webContents.capturePage()).toPNG()); }
+        if(mode==="pet") {
+          await delay(80);
+          const particlePng=await win.webContents.executeJavaScript("document.querySelector('.hide-particles').toDataURL('image/png')");
+          await writeFile(path.resolve("work/huluhulu-hide.png"),Buffer.from(particlePng.split(',')[1],"base64"));
+        }
         const elapsed=(await hiddenAt)-started;
         assert.ok(elapsed<500,"native hide deadline: "+elapsed);
         console.log("Hide duration:",mode,Math.round(elapsed),"ms");
@@ -902,6 +906,27 @@ try {
     await evaluate("(()=>{const p=document.querySelector('.pet'),r=p.getBoundingClientRect();p.dispatchEvent(new MouseEvent('click',{clientX:r.x+r.width*.5,clientY:r.y+r.height*.2,detail:1}));})()"); assert.equal(await evaluate("document.body.dataset.reaction"),"shy");
     await delay(1800); assert.equal(await evaluate("document.body.dataset.reaction"),undefined);
   });
+  await check("Pet hint renders short copy in a cartoon bubble",async()=>{
+    setMode("dodge");setMode("pet");await delay(150);
+    getRuntime().trayMenu.emit("menu-will-show",{});
+    await evaluate("document.querySelector('.pet').click()");
+    assert.equal(await evaluate("document.body.dataset.reaction"),"hop");
+    const hintStyle=await evaluate("(()=>{const h=document.querySelector('#pet-hint'),s=getComputedStyle(h),tail=getComputedStyle(h,'::before');return {text:h.textContent,background:s.backgroundColor,color:s.color,border:s.borderTopWidth,shadow:s.boxShadow,tail:tail.content};})()");
+    assert.ok(hintStyle.text.length>0);assert.equal(hintStyle.background,"rgb(255, 253, 244)");
+    assert.equal(hintStyle.color,"rgb(23, 35, 75)");assert.equal(hintStyle.border,"2px");
+    assert.notEqual(hintStyle.shadow,"none");assert.notEqual(hintStyle.tail,"none");
+    await delay(80);
+    await writeFile(path.resolve("work/pet-cartoon-bubble.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
+    getRuntime().trayMenu.emit("menu-will-close",{});
+  });
+  await check("Pet idle variety maps to distinct gentle motions",async()=>{
+    setMode("pet");await delay(100);
+    for(const [kind,name] of [["idle-bob","idle-bob"],["idle-sway","idle-sway"]]) {
+      const animations=await evaluate(`(()=>{const svg=document.querySelector('.mascot-svg');svg.dataset.reaction=${JSON.stringify(kind)};return document.querySelector('.mascot').getAnimations().map(animation=>animation.animationName);})()`);
+      assert.ok(animations.includes(name),`${kind} should start ${name}`);
+    }
+    await evaluate("delete document.querySelector('.mascot-svg').dataset.reaction");
+  });
   await check("Pet touch: tickle belly, poke, cheek nuzzle and native long-press cuddle",async()=>{
     setMode("dodge"); setMode("pet"); await delay(150);
     getRuntime().trayMenu.emit("menu-will-show",{});
@@ -1004,14 +1029,17 @@ try {
     getRuntime().petWindow.webContents.send("pet:proximity",{near:false,x:0,y:0});
     await evaluate("document.querySelector('.pet').dispatchEvent(new PointerEvent('pointerleave'))");
     const start=performance.now();
-    await until(()=>evaluate("Boolean(document.body.dataset.reaction?.startsWith('idle-'))"),23000);
-    assert.ok(performance.now()-start>=11500,"not a frequent looping motion");
+    await until(()=>evaluate("Boolean(document.body.dataset.reaction?.startsWith('idle-'))"),16000);
+    assert.ok(performance.now()-start>=7500,"autonomous motion keeps a quiet gap");
     assert.equal(await evaluate("document.body.dataset.reaction"),"idle-look");
-    assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.cursorGaze"), "true", "standard cursor gaze remains authoritative during an idle gesture");
+    assert.ok(await evaluate("document.querySelector('#pet-hint').textContent.length>0"),"idle gesture carries a short utterance");
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('#pet-hint')).backgroundColor"),"rgb(255, 253, 244)");
     await writeFile(path.resolve("work/pet-idle-look.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
-    await delay(1700); assert.equal(await evaluate("document.body.dataset.reaction"),undefined);
+    await until(()=>evaluate("document.body.dataset.reaction===undefined"),2000);
+    assert.ok(await evaluate("document.querySelector('#pet-hint').textContent.length>0"),"idle bubble lingers after the gesture rests");
+    await until(()=>evaluate("document.querySelector('#pet-hint').textContent===''"),1200);
     await delay(2500); assert.equal(await evaluate("document.body.dataset.reaction"),undefined);
-    await until(()=>evaluate("document.body.dataset.reaction==='idle-stretch'"),21000);
+    await until(()=>evaluate("document.body.dataset.reaction==='idle-stretch'"),17000);
     assert.ok((await evaluate("document.querySelector('.mascot').getAnimations().map(a=>a.animationName)")).includes("idle-stretch"));
     await evaluate("document.querySelector('.pet').dispatchEvent(new PointerEvent('pointerenter'))");
     assert.notEqual(await evaluate("document.body.dataset.reaction"),"idle-stretch");
@@ -1020,6 +1048,22 @@ try {
     assert.equal(await evaluate("document.querySelector('.lid').getAnimations().length"),0);
     assert.equal(await evaluate("new DOMMatrix(getComputedStyle(document.querySelector('.lid')).transform).m42"),-20);
     await toggleAndWait(); restorePetFrame(); getRuntime().trayMenu.emit("menu-will-close",{});
+  });
+  await check("Pet gaze rests after five still seconds and wakes on cursor movement",async()=>{
+    const realCursor=screen.getCursorScreenPoint;
+    let cursor={x:getRuntime().position.x+240,y:getRuntime().position.y+66};
+    screen.getCursorScreenPoint=()=>({...cursor});
+    try {
+      setMode("dodge");setMode("pet");await delay(150);
+      await until(()=>evaluate("document.querySelector('.mascot-svg').dataset.cursorGaze==='true'"));
+      await delay(5050);
+      await until(()=>evaluate("document.querySelector('.mascot-svg').dataset.cursorGaze===undefined"),500);
+      assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.looking"),undefined);
+      cursor.x+=1;
+      await until(()=>evaluate("document.querySelector('.mascot-svg').dataset.cursorGaze==='true'"),500);
+    } finally {
+      screen.getCursorScreenPoint=realCursor;
+    }
   });
   await check("reduced-motion mode keeps eyes open and disables decorative motion",async()=>{
     const win=getRuntime().petWindow;
@@ -1038,6 +1082,11 @@ try {
   });
   await check("Pet avoidance: no wandering, fast reflex, and hover interaction priority",async()=>{
     setMode("dodge"); setMode("pet"); await until(()=>!getRuntime().modeTransition);
+    const initial=getRuntime().position,area=screen.getDisplayNearestPoint(initial).workArea;
+    const centered={x:area.x+area.width/2-66,y:area.y+area.height/2-66};
+    for(const request of [{phase:"start",point:initial},{phase:"move",point:centered},{phase:"end"}]) {
+      await evaluate("window.bluepet.dragPet("+JSON.stringify(request)+")");await delay(50);
+    }
     const realCursor=screen.getCursorScreenPoint, realAnimations=systemPreferences.getAnimationSettings;
     const start={...getRuntime().position}, center={x:start.x+66,y:start.y+66};
     let cursor={x:center.x+260,y:center.y}, samples=0;
@@ -1058,6 +1107,76 @@ try {
       assert.ok(Math.hypot(getRuntime().position.x-held.x,getRuntime().position.y-held.y)<2,"进入互动区域后应停下，允许摸头和拖拽");
     } finally {
       screen.getCursorScreenPoint=realCursor; systemPreferences.getAnimationSettings=realAnimations;
+      await evaluate("window.bluepet.setPetHover(false)");
+    }
+  });
+  await check("Pet returns to its pre-dodge position three seconds after avoidance stops",async()=>{
+    setMode("dodge");setMode("pet");await until(()=>!getRuntime().modeTransition,7000);
+    const initial=getRuntime().position,area=screen.getDisplayNearestPoint(initial).workArea;
+    const realPoint=screen.getCursorScreenPoint();
+    const safeHomes=[
+      {x:area.x+area.width/2-66,y:area.y+180},
+      {x:area.x+area.width/2-66,y:area.y+area.height-132-180},
+    ];
+    const safeHome=safeHomes.sort((a,b)=>
+      Math.hypot(realPoint.x-b.x-66,realPoint.y-b.y-66)-Math.hypot(realPoint.x-a.x-66,realPoint.y-a.y-66))[0];
+    for(const request of [{phase:"start",point:initial},{phase:"move",point:safeHome},{phase:"end"}]) {
+      await evaluate("window.bluepet.dragPet("+JSON.stringify(request)+")");await delay(50);
+    }
+    const realCursor=screen.getCursorScreenPoint,realAnimations=systemPreferences.getAnimationSettings;
+    const origin={...getRuntime().position},center={x:origin.x+66,y:origin.y+66};
+    let cursor={x:center.x+240,y:center.y},samples=0,drifting=false,drift=0;
+    screen.getCursorScreenPoint=()=>{
+      samples++;
+      if(drifting) drift=(drift+1)%20;
+      return {x:cursor.x+drift,y:cursor.y};
+    };
+    systemPreferences.getAnimationSettings=()=>({...realAnimations.call(systemPreferences),prefersReducedMotion:false});
+    try {
+      await evaluate("window.bluepet.setPetHover(false)");await until(()=>samples>=3);
+      cursor={x:center.x+105,y:center.y};
+      await until(()=>getRuntime().dodgeMotion?.reflex);
+      await until(()=>Math.hypot(getRuntime().position.x-origin.x,getRuntime().position.y-origin.y)>35);
+      assert.deepEqual(getRuntime().petReturn.origin,origin,"return origin is captured before automatic avoidance moves the pet");
+      await evaluate("window.bluepet.setPetHover(true)");
+      await until(()=>getRuntime().petHovered&&Math.hypot(getRuntime().velocity.x,getRuntime().velocity.y)===0);
+      assert.deepEqual(getRuntime().petHome,origin,"hovering after a dodge does not overwrite the stable Pet home");
+      await evaluate("window.bluepet.setPetHover(false)");
+      const displacedCenter={x:getRuntime().position.x+66,y:getRuntime().position.y+66};
+      cursor={x:displacedCenter.x+240,y:displacedCenter.y};
+      const samplesBeforeSecondDodge=samples;await until(()=>samples-samplesBeforeSecondDodge>=3);
+      cursor={x:displacedCenter.x+105,y:displacedCenter.y};
+      await until(()=>getRuntime().dodgeMotion?.reflex&&getRuntime().petReturn.active);
+      assert.deepEqual(getRuntime().petReturn.origin,origin,"repeated dodges keep the same user-defined home");
+      cursor={x:center.x+360,y:center.y};
+      try {
+        await until(()=>getRuntime().petReturn.active&&!getRuntime().petReturn.avoiding,6000);
+      } catch {
+        const snapshot=getRuntime();
+        throw new Error("avoidance did not stop: "+JSON.stringify({
+          petReturn:snapshot.petReturn,dodgeVelocity:snapshot.dodgeMotion?.velocity,
+          position:snapshot.position,cursor,
+        }));
+      }
+      const samplesAtRest=samples;drifting=true;
+      await delay(2700);
+      assert.notEqual(getRuntime().modeTransition?.kind,"pet-dodge-return","return does not start before avoidance has rested for three seconds");
+      assert.ok(samples-samplesAtRest>20,"the test cursor keeps moving at a safe distance during the rest period");
+      try {
+        await until(()=>getRuntime().modeTransition?.kind==="pet-dodge-return",1500);
+      } catch {
+        const snapshot=getRuntime();
+        throw new Error("return did not start: "+JSON.stringify({
+          petReturn:snapshot.petReturn,petHovered:snapshot.petHovered,
+          position:snapshot.position,origin,cursor,
+        }));
+      }
+      await until(()=>!getRuntime().petReturn.active,3000);
+      const settled=getRuntime().position;
+      assert.ok(Math.hypot(settled.x-origin.x,settled.y-origin.y)<1,
+        "Pet settles at its exact pre-dodge position: "+JSON.stringify({origin,settled}));
+    } finally {
+      screen.getCursorScreenPoint=realCursor;systemPreferences.getAnimationSettings=realAnimations;
       await evaluate("window.bluepet.setPetHover(false)");
     }
   });

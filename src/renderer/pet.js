@@ -33,8 +33,9 @@ let mode = "dodge", chatOpen = false, near = false, pending = false;
 let reactionTimer, hintTimer, hoverTimer, lastReaction = 0;
 let moving = false, holdTimer, pressPoint, suppressClick = false;
 const gesture = createStrokeGesture({ getParts: () => character.definition.interactionParts || [] });
-let visible = false, hovering = false, idleTimer, idleFinish, idleCount = 0;
+let visible = false, hovering = false, idleTimer, idleFinish, idleHintTimer, idleCount = 0;
 let dragging = false;
+const IDLE_BUBBLE_HOLD_MS = 900;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 const hideEffect=await installHideEffect(pet,()=>{
   visible=false;drag.cancel();resetReaction();character.setActive(false);
@@ -57,21 +58,31 @@ const drag = createPetDrag(pet, {
 function stopIdle() {
   clearTimeout(idleTimer); idleTimer = undefined;
   clearTimeout(idleFinish); idleFinish = undefined;
-  if (body.dataset.reaction?.startsWith("idle-")) {
-    delete body.dataset.reaction; character.reset();
+  clearTimeout(idleHintTimer); idleHintTimer = undefined;
+  if (body.dataset.reaction?.startsWith("idle-") || hint.dataset.idle === "true") {
+    delete hint.dataset.idle;
+    delete body.dataset.reaction; hint.textContent = ""; character.reset();
   }
 }
 function scheduleIdle() {
-  if (idleTimer || idleFinish || mode !== "pet" || !visible || document.hidden || chatOpen || moving || drag.pressed || near || hovering || reduced.matches || body.dataset.reaction) return;
+  if (idleTimer || idleFinish || idleHintTimer || mode !== "pet" || !visible || document.hidden || chatOpen || moving || drag.pressed || near || hovering || reduced.matches || body.dataset.reaction) return;
   idleTimer = setTimeout(() => {
     idleTimer = undefined;
     const idle = interaction.idle();
     body.dataset.reaction = idle.kind;
     character.react(idle.kind);
+    hint.dataset.idle = "true";
+    hint.textContent = idle.message;
     if (idle.kind === "idle-look") character.motion({ x: ++idleCount % 2 ? -1 : 1, y: -.2 });
     idleFinish = setTimeout(() => {
       idleFinish = undefined;
-      delete body.dataset.reaction; character.reset(); scheduleIdle();
+      delete body.dataset.reaction; character.reset();
+      idleHintTimer = setTimeout(() => {
+        idleHintTimer = undefined;
+        delete hint.dataset.idle;
+        hint.textContent = "";
+        scheduleIdle();
+      }, IDLE_BUBBLE_HOLD_MS);
     }, idle.duration);
   }, idleDelay());
 }

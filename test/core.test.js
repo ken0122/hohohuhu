@@ -14,6 +14,8 @@ import {
   petShouldShow,
   petShouldAvoid,
   cursorInPetSprite,
+  createCursorAttention,
+  createPetReturnTracker,
   normalizeMode,
   nextMode,
 } from "../src/core.js";
@@ -90,6 +92,32 @@ test("all four control directions and diagonals have bounded speed", () => {
 test("gaze follows vertical and horizontal movement without mirroring the body", () => {
   assert.deepEqual(gazeDirection(0, -12), { x: 0, y: -1 });
   assert.deepEqual(gazeDirection(-12, 0), { x: -1, y: 0 });
+});
+test("Pet cursor attention relaxes after five still seconds and resumes on movement", () => {
+  const attention = createCursorAttention();
+  assert.equal(attention.sample({ x: 10, y: 20 }, 0), true);
+  assert.equal(attention.sample({ x: 10, y: 20 }, 5000), true);
+  assert.equal(attention.sample({ x: 10, y: 20 }, 5001), false);
+  assert.equal(attention.sample({ x: 11, y: 20 }, 8000), true);
+  assert.equal(attention.sample({ x: 11, y: 20 }, 13001), false);
+  attention.reset();
+  assert.equal(attention.sample({ x: 11, y: 20 }, 20000), true);
+});
+test("Pet dodge return keeps its origin and counts three seconds from actual avoidance stop", () => {
+  const tracker = createPetReturnTracker();
+  assert.deepEqual(tracker.sample(false, 0), { active: false, avoiding: false, ready: false });
+  assert.deepEqual(tracker.begin({ x: 100, y: 200 }, 0), {
+    active: true, avoiding: true, ready: false, origin: { x: 100, y: 200 },
+  });
+  assert.equal(tracker.sample(true, 1000).ready, false);
+  assert.equal(tracker.sample(false, 1500).ready, false);
+  assert.equal(tracker.sample(false, 4500).ready, false);
+  assert.equal(tracker.sample(false, 4501).ready, true);
+  assert.equal(tracker.sample(true, 5000).ready, false);
+  assert.equal(tracker.sample(false, 6000).ready, false);
+  assert.equal(tracker.sample(false, 9001).ready, true);
+  tracker.cancel();
+  assert.equal(tracker.active, false);
 });
 test("Dodge stays visible unless manually hidden", () => {
   for (const mode of [MODES.DODGE, MODES.PET]) {

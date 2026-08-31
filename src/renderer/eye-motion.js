@@ -1,5 +1,5 @@
 export const blinkDelay = (random = Math.random) => 3800 + random() * 3400;
-export const idleDelay = (random = Math.random) => 12000 + random() * 10000;
+export const idleDelay = (random = Math.random) => 8000 + random() * 7000;
 
 export function eyeFrames(kind, poses) {
   const open = `translateY(${poses.open}px)`;
