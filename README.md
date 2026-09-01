@@ -162,11 +162,23 @@ bluepet
 npm ci
 npm start               # 前台开发运行
 npm test                # Node 单测，无真实模型请求
-npm run test:desktop    # 真实 Electron 窗口回归
+npm run test:desktop:smoke # 高频桌面冒烟，仍会短暂显示和聚焦窗口
+npm run test:desktop    # 完整真实 Electron 窗口回归，等同于 test:desktop:release
 npm run pack            # 本机架构 .app，输出 dist/
 ```
 
-桌面测试需要 macOS 图形会话，并会操作窗口与焦点；先从菜单退出运行中的宠物，测试后自行重启。截图写入被 Git 忽略的 `work/`。`desktop-test-results.json` 在本轮启动时重置，并记录筛选条件、已通过用例及 `running` / `passed` / `failed` 状态；失败时记录当前失败项，之后的用例未执行。隐藏耗时独立观测原生窗口可见性，不计入截图与写盘等待。`BLUEPET_TEST_MATCH` 可按名称筛选测试；只有显式设置 `BLUEPET_TEST_CHAT=1` 才会发送一条真实模型问候。焦点被其他应用抢走可能影响键盘、长按和拖拽测试；套件遇错立即退出，后续用例尚未执行，筛选通过不代表完整回归通过。
+桌面测试需要 macOS 图形会话，并会操作窗口与焦点；先从菜单退出运行中的宠物，测试后自行重启。日常迭代先跑 `npm test`，相关功能完成后跑 smoke 或影响范围内的桌面用例，完整 release 套件留到提交收口或发布前执行。固定分层命令如下：
+
+| 命令 | 范围 | 适用时机 |
+| --- | --- | --- |
+| `npm run test:desktop:smoke` | 启动、外观设置、三模式基础往返、键盘与 Pac-Man 主链路 | 每轮功能完成后 |
+| `npm run test:desktop:focus` | 会主动聚焦窗口或依赖原生输入的用例 | 可接受桌面被集中打断时 |
+| `npm run test:desktop:soak` | 5–10 秒眨眼、自治动作、避让返回和持续可见性观测 | 空闲时 |
+| `npm run test:desktop:release` | 全部真实桌面检查 | 提交收口或发布前 |
+
+需要按影响范围进一步缩小时，可用逗号分隔的 `BLUEPET_TEST_TAGS`，例如 `BLUEPET_TEST_TAGS='character,settings' npm run test:desktop`；也可继续用 `BLUEPET_TEST_MATCH` 按名称正则筛选。分层、功能标签和名称筛选同时设置时取交集，不会扩大测试范围。只有显式设置 `BLUEPET_TEST_CHAT=1` 才会发送一条真实模型问候。
+
+截图写入被 Git 忽略的 `work/`。`desktop-test-results.json` 在本轮启动时重置，并记录分层、标签、筛选条件、每项耗时、总耗时、已通过用例及 `running` / `passed` / `failed` 状态；失败时记录当前失败项，之后的用例未执行。隐藏耗时独立观测原生窗口可见性，不计入截图与写盘等待。焦点被其他应用抢走可能影响键盘、长按和拖拽测试；筛选通过不能替代完整 release 回归成功。
 
 主进程负责窗口、输入与 HTTP；`src/app-state.js` 集中定义模式、聊天、隐藏与控制状态转换，原生副作用由主进程统一同步 Pet / Pac-Man 窗口。拖拽、聊天、隐藏和恢复共用中断清理路径；renderer 使用最小 IPC。所有窗口保持 `contextIsolation`、`sandbox`，关闭 `nodeIntegration`。逻辑回归在 `test/`，真实窗口检查在 `scripts/desktop-test.mjs`。
 

@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { app, dialog, globalShortcut, nativeImage, nativeTheme, screen, powerMonitor, systemPreferences } from "electron";
+import { createDesktopTestSelection } from "./desktop-test-selection.mjs";
 
 // Do not await app readiness at module top level: Electron awaits ESM evaluation.
 // Real Electron windows, isolated app data. Live chat is explicitly opt-in.
@@ -36,20 +37,31 @@ async function focusWindow(win) {
   }
   throw new Error("窗口焦点无法稳定保持");
 }
+const selection = createDesktopTestSelection();
 const results = [];
+const timings = [];
+const suiteStartedAt = performance.now();
 let currentCheck;
 const resultFile = path.resolve("work/desktop-test-results.json");
 async function writeResults(status, error) {
   await writeFile(resultFile, JSON.stringify({
-    status, filter: process.env.BLUEPET_TEST_MATCH || null, appRoot: process.env.BLUEPET_TEST_APP_ROOT || null,
+    status, suite: selection.suite, tags: selection.requestedTags, filter: selection.filter,
+    appRoot: process.env.BLUEPET_TEST_APP_ROOT || null,
     passed: results, failed: error ? currentCheck : undefined,
+    timings, totalDurationMs: Math.round(performance.now() - suiteStartedAt),
     error: error?.message,
   }, null, 2));
 }
-async function check(name, run) {
-  if (process.env.BLUEPET_TEST_MATCH && !new RegExp(process.env.BLUEPET_TEST_MATCH).test(name)) return;
+async function check(name, tags, run) {
+  if (!selection.matches(name, tags)) return;
   currentCheck = name;
-  await run(); results.push(name); console.log("PASS", name);
+  const startedAt = performance.now();
+  try {
+    await run();
+  } finally {
+    timings.push({ name, tags, durationMs: Math.round(performance.now() - startedAt) });
+  }
+  results.push(name); console.log("PASS", name, `${timings.at(-1).durationMs}ms`);
   currentCheck = undefined;
   await writeResults("running");
 }
@@ -75,7 +87,7 @@ try {
   await until(() => getRuntime().petWindow && !getRuntime().petWindow.webContents.isLoading());
   await delay(200);
   await until(()=>evaluate("Boolean(document.querySelector('.mascot-svg'))"));
-  await check("appearance and language switch live without reloading or losing state", async () => {
+  await check("appearance and language switch live without reloading or losing state", ["smoke", "appearance", "settings"], async () => {
     setMode("pet"); showChat(); await until(() => getRuntime().state.chatOpen && getRuntime().petWindow.isVisible());
     const win = getRuntime().petWindow, id = win.webContents.id;
     await evaluate("document.querySelector('#message').value='keep-this-draft'");
@@ -145,7 +157,7 @@ try {
     await until(() => getRuntime().petWindow.isVisible());
     await until(() => getRuntime().preferences.resolvedLocale === "zh-CN");
   });
-  await check("Character library: preview/apply, hidden state, live replacement and game continuity", async () => {
+  await check("Character library: preview/apply, hidden state, live replacement and game continuity", ["character", "focus"], async () => {
     setMode("pet"); await until(() => !getRuntime().modeTransition, 7000);
     await toggleAndWait();
     getRuntime().trayMenu.getMenuItemById("characters").click();
@@ -257,7 +269,7 @@ try {
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.affection span')).color"), "rgb(110, 137, 241)");
     win.close(); await until(() => !getRuntime().characterWindow); setMode("pet");
   });
-  await check("Character import: native picker boundary, real worker conversion, confirm, reopen and removal", async () => {
+  await check("Character import: native picker boundary, real worker conversion, confirm, reopen and removal", ["character", "import", "focus"], async () => {
     const originalPicker = dialog.showOpenDialog;
     const originalMessageBox = dialog.showMessageBox;
     let pickerCalls = 0, closePrompts = 0;
@@ -343,7 +355,7 @@ try {
       getRuntime().characterWindow.close(); await until(() => !getRuntime().characterWindow);
     } finally { dialog.showOpenDialog = originalPicker; dialog.showMessageBox = originalMessageBox; }
   });
-  await check("Character color import: raster normalization, editable analysis and live use", async () => {
+  await check("Character color import: raster normalization, editable analysis and live use", ["character", "import", "focus"], async () => {
     const originalPicker = dialog.showOpenDialog;
     const { default: sharp } = await import("sharp");
     const fixture = path.resolve("work/character-color-fixture.png");
@@ -441,7 +453,7 @@ try {
       getRuntime().characterWindow.close(); await until(() => !getRuntime().characterWindow);
     } finally { dialog.showOpenDialog = originalPicker; }
   });
-  await check("API settings: tray entry, isolated window, encrypted save, reopen and clear", async () => {
+  await check("API settings: tray entry, isolated window, encrypted save, reopen and clear", ["smoke", "settings", "chat"], async () => {
     const items = getRuntime().trayMenu.items;
     assert.equal(items[items.findIndex(item => item.id === "quit") - 1].id, "api-settings");
     setMode("pet");
@@ -494,7 +506,7 @@ try {
     getRuntime().settingsWindow.close();
     setMode("pet");
   });
-  await check("renderer preserves original SVG geometry inside standard motion layers",async()=>{
+  await check("renderer preserves original SVG geometry inside standard motion layers", ["smoke", "renderer", "character"], async()=>{
     setMode("pet"); await delay(150);
     const original = await evaluate("window.bluepet.loadMascot()");
     const originalBody=original.match(/class="body" d="([^"]+)"/)[1];
@@ -505,7 +517,7 @@ try {
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.pet')).width"),"84px");
     await writeFile(path.resolve("work/original-idle.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
   });
-  await check("Character bindings: basic SVG, independent reactions and atomic remount cleanup", async () => {
+  await check("Character bindings: basic SVG, independent reactions and atomic remount cleanup", ["character", "renderer"], async () => {
     setMode("pet");
     await until(() => !getRuntime().modeTransition, 7000);
     await evaluate(`(async () => {
@@ -551,7 +563,7 @@ try {
       } finally { first?.destroy(); second?.destroy(); host.remove(); }
     })()`);
   });
-  await check("Character motion: reduced preference before creation and live changes for both bindings", async () => {
+  await check("Character motion: reduced preference before creation and live changes for both bindings", ["character", "motion"], async () => {
     setMode("pet");
     const win = getRuntime().petWindow;
     win.webContents.debugger.attach("1.3");
@@ -594,7 +606,7 @@ try {
       win.webContents.debugger.detach();
     }
   });
-  await check("Mode inertia: smooth launch, momentum on return/reversal, settling and chat cancellation",async()=>{
+  await check("Mode inertia: smooth launch, momentum on return/reversal, settling and chat cancellation", ["motion", "mode"], async()=>{
     setMode("pet");await until(()=>!getRuntime().modeTransition,7000);
     const realCursor=screen.getCursorScreenPoint,realAnimations=systemPreferences.getAnimationSettings;
     const area=screen.getDisplayMatching(getRuntime().petWindow.getBounds()).workArea;
@@ -622,7 +634,7 @@ try {
       restorePetFrame();
     } finally {screen.getCursorScreenPoint=realCursor;systemPreferences.getAnimationSettings=realAnimations;}
   });
-  await check("Motion cadence: native Dodge and Pet return window updates",async()=>{
+  await check("Motion cadence: native Dodge and Pet return window updates", ["motion", "dodge", "pet"], async()=>{
     setMode("pet");await until(()=>!getRuntime().modeTransition,7000);
     const win=getRuntime().petWindow,origin=getRuntime().position,area=screen.getDisplayMatching(win.getBounds()).workArea;
     const target={x:area.x+area.width/2-66,y:area.y+area.height/2-66};
@@ -646,7 +658,7 @@ try {
       await until(()=>!getRuntime().modeTransition,7000);await visiblePixels();
     } finally {screen.getCursorScreenPoint=realCursor;win.setPosition=realPosition;systemPreferences.getAnimationSettings=realAnimations;}
   });
-  await check("Dodge gaze: pupil tracks cursor during walking, chat, menu and restore",async()=>{
+  await check("Dodge gaze: pupil tracks cursor during walking, chat, menu and restore", ["dodge", "gaze"], async()=>{
     const realCursor=screen.getCursorScreenPoint;
     let offset={x:400,y:0};
     const eyeCenter=()=>{
@@ -694,7 +706,7 @@ try {
       screen.getCursorScreenPoint=realCursor;setMode("pet");
     }
   });
-  await check("Dodge chat: no wander, native avoidance, input stability, hit testing and bubble geometry",async()=>{
+  await check("Dodge chat: no wander, native avoidance, input stability, hit testing and bubble geometry", ["dodge", "chat", "focus"], async()=>{
     setMode("pet");await until(()=>!getRuntime().modeTransition,7000);
     const win=getRuntime().petWindow,origin=getRuntime().position;
     const area=screen.getDisplayMatching(win.getBounds()).workArea;
@@ -741,7 +753,7 @@ try {
       assert.equal(await evaluate("document.querySelector('.speech').inert"),true);
     } finally {screen.getCursorScreenPoint=realCursor;setMode("pet");}
   });
-  await check("Hide particles: Pet, Dodge, chat and Pac-Man finish within 500ms and cancel safely",async()=>{
+  await check("Hide particles: Pet, Dodge, chat and Pac-Man finish within 500ms and cancel safely", ["hide", "motion"], async()=>{
     const realAnimations=systemPreferences.getAnimationSettings;
     systemPreferences.getAnimationSettings=()=>({...realAnimations.call(systemPreferences),prefersReducedMotion:false});
     try {
@@ -781,7 +793,7 @@ try {
       assert.equal(getRuntime().petWindow.isVisible(),true);assert.equal(getRuntime().state.mode,"dodge");
     } finally {systemPreferences.getAnimationSettings=realAnimations;setMode("pet");}
   });
-  await check("Hide reduced motion: startup preference and live changes skip particles",async()=>{
+  await check("Hide reduced motion: startup preference and live changes skip particles", ["hide", "motion"], async()=>{
     setMode("pet");const win=getRuntime().petWindow;
     const realAnimations=systemPreferences.getAnimationSettings;
     systemPreferences.getAnimationSettings=()=>({...realAnimations.call(systemPreferences),prefersReducedMotion:false});
@@ -798,7 +810,7 @@ try {
       toggleHidden();await delay(100);assert.equal(win.isVisible(),true);
     } finally {await media("no-preference");win.webContents.debugger.detach();systemPreferences.getAnimationSettings=realAnimations;setMode("pet");}
   });
-  await check("eye stays open by default under CSP, with only brief natural blinks",async()=>{
+  await check("eye stays open by default under CSP, with only brief natural blinks", ["soak", "gaze", "motion"], async()=>{
     const eyeY=()=>evaluate("new DOMMatrix(getComputedStyle(document.querySelector('.lid')).transform).m42");
     // Previous checks may finish during a legitimate blink; begin the sampling
     // window once it finishes, retaining the duration/open-ratio assertions.
@@ -824,7 +836,7 @@ try {
     assert.ok(closed/samples<.1,"fully open for over 90% of the time");
     assert.ok(longest<350,"no lingering half-closed lid");
   });
-  await check("system-tinted outline menu-bar icon and plain quit item", async () => {
+  await check("system-tinted outline menu-bar icon and plain quit item", ["menu", "appearance"], async () => {
     const icon = nativeImage.createFromPath(path.resolve("assets/tray.png"));
     assert.equal(icon.isEmpty(),false);
     const b=icon.toBitmap();let painted=0,transparent=0;
@@ -845,7 +857,7 @@ try {
     assert.match(petMode.label,/ⓘ$/);assert.equal(petMode.toolTip,"拖动换位置 · 长按抱抱 · 悬停摸头挠肚肚 · 方向键移动");
     assert.equal(await evaluate("document.querySelector('.pet').hasAttribute('title')"),false,"operation help no longer covers the pet as an HTML tooltip");
   });
-  await check("shortcut submenu order, four registrations and no menu double-registration", async () => {
+  await check("shortcut submenu order, four registrations and no menu double-registration", ["shortcuts", "menu"], async () => {
     assert.ok(globalShortcut.isRegistered("Control+Alt+B"));
     assert.ok(globalShortcut.isRegistered("Control+Alt+Space"));
     assert.ok(globalShortcut.isRegistered("Control+Alt+Command+M"));
@@ -859,7 +871,7 @@ try {
     assert.equal(getRuntime().trayMenu.getMenuItemById("hide").accelerator, "Control+Alt+B");
     assert.equal(getRuntime().trayMenu.getMenuItemById("summon").accelerator, "Control+Alt+B");
   });
-  await check("Character shortcut cycles once per press without revealing a hidden pet", async () => {
+  await check("Character shortcut cycles once per press without revealing a hidden pet", ["shortcuts", "character"], async () => {
     if (!getRuntime().state.manualHidden) await toggleAndWait();
     const before = getRuntime().selectedCharacterId;
     await cycleCharacter();
@@ -874,7 +886,7 @@ try {
     assert.equal(getRuntime().selectedCharacterId, before);
     await toggleAndWait();
   });
-  await check("Hide shortcut summons to the initial position on every redisplay", async () => {
+  await check("Hide shortcut summons to the initial position on every redisplay", ["shortcuts", "hide"], async () => {
     setMode("pet"); summonPet(); await until(() => getRuntime().petWindow.isVisible());
     const initial = getRuntime().position;
     await evaluate(`window.bluepet.dragPet({phase:'start',point:{x:${initial.x + 66},y:${initial.y + 66}}});window.bluepet.dragPet({phase:'move',point:{x:${initial.x - 34},y:${initial.y - 14}}});window.bluepet.dragPet({phase:'end',point:{x:${initial.x - 34},y:${initial.y - 14}}})`);
@@ -884,7 +896,7 @@ try {
     toggleHidden(); await until(() => getRuntime().petWindow.isVisible());
     assert.deepEqual(getRuntime().position, initial);
   });
-  await check("Mode shortcut: cycle order, repeat guard, chat exit and hidden-pet protection",async()=>{
+  await check("Mode shortcut: cycle order, repeat guard, chat exit and hidden-pet protection", ["shortcuts", "mode"], async()=>{
     setMode("dodge");cycleMode();assert.equal(getRuntime().state.mode,"pet");
     cycleMode();assert.equal(getRuntime().state.mode,"pet","holding the shortcut cannot race through modes");
     await delay(420);showChat();cycleMode();assert.equal(getRuntime().state.mode,"pacman");
@@ -894,7 +906,7 @@ try {
     await toggleAndWait();await delay(420);cycleMode();assert.equal(getRuntime().state.mode,"dodge");
     assert.equal(getRuntime().petWindow.isVisible(),false);await toggleAndWait();
   });
-  await check("Frame clock: idle avoids native position writes and hidden frames stop",async()=>{
+  await check("Frame clock: idle avoids native position writes and hidden frames stop", ["motion", "renderer"], async()=>{
     setMode("pet");await until(()=>!getRuntime().modeTransition,7000);await delay(100);
     const win=getRuntime().petWindow,real=win.setPosition;let writes=0;
     win.setPosition=function(...args){writes++;return real.apply(this,args);};
@@ -906,7 +918,7 @@ try {
     } finally {win.setPosition=real;}
   });
   for(const mode of ["dodge","pet"]) {
-    await check(mode + ": visible geometry, real character pixels, chat roundtrip and boss-key restore",async()=>{
+    await check(mode + ": visible geometry, real character pixels, chat roundtrip and boss-key restore", ["smoke", "mode", "chat", "hide"], async()=>{
       setMode(mode); await delay(180);
       assert.equal(getRuntime().petWindow.isVisible(),true);
       await visiblePixels();
@@ -919,7 +931,7 @@ try {
       assert.ok(rect.left >= 0 && rect.right <= 132 && rect.top >= 0 && rect.bottom <= 132);
     });
   }
-  await check("opening/cancelling status menu leaves hidden state and chat untouched",async()=>{
+  await check("opening/cancelling status menu leaves hidden state and chat untouched", ["menu", "hide", "chat"], async()=>{
     setMode("pet"); await toggleAndWait();
     const before=getRuntime().state;
     const menu=getRuntime().trayMenu;
@@ -928,7 +940,7 @@ try {
     menu.emit("menu-will-close",{}); assert.deepEqual(getRuntime().state,before);
     menu.getMenuItemById("pet").click(); await delay(150); assert.equal(getRuntime().petWindow.isVisible(),true);
   });
-  await check("real native context menu opens and closes without revealing the hidden pet",async()=>{
+  await check("real native context menu opens and closes without revealing the hidden pet", ["focus", "menu", "hide"], async()=>{
     setMode("pet"); await toggleAndWait();
     const {tray,trayMenu}=getRuntime(),before=getRuntime().state;
     let opened=false,closed=false;
@@ -941,7 +953,7 @@ try {
     await until(()=>closed,2000);clearTimeout(close);
     assert.deepEqual(getRuntime().state,before);
   });
-  await check("Chat editing: native select-all, undo and redo in Pet and Dodge", async () => {
+  await check("Chat editing: native select-all, undo and redo in Pet and Dodge", ["focus", "chat"], async () => {
     for (const mode of ["pet", "dodge"]) {
       setMode(mode);
       showChat();
@@ -965,7 +977,7 @@ try {
       restorePetFrame();
     }
   });
-  await check("Pet keyboard: four directions, release, focus loss, chat isolation and legacy Control alias",async()=>{
+  await check("Pet keyboard: four directions, release, focus loss, chat isolation and legacy Control alias", ["smoke", "focus", "pet", "keyboard"], async()=>{
     setMode("control"); await delay(150); assert.equal(getRuntime().state.mode,"pet");
     for(const [key,axis,sign] of [["LEFT","x",-1],["UP","y",-1],["RIGHT","x",1],["DOWN","y",1]]) {
       const win=getRuntime().petWindow;
@@ -1010,7 +1022,7 @@ try {
     assert.deepEqual(getRuntime().position,beforeChat);
     win.webContents.sendInputEvent({type:"keyUp",keyCode:"RIGHT"});restorePetFrame();
   });
-  await check("Pet: proximity, linger, strokes and clicks have distinct bounded reactions",async()=>{
+  await check("Pet: proximity, linger, strokes and clicks have distinct bounded reactions", ["pet", "interaction"], async()=>{
     setMode("pet"); await delay(180);
     await evaluate("document.querySelector('.pet').dispatchEvent(new PointerEvent('pointerenter'))");
     await delay(1200); assert.equal(await evaluate("document.body.dataset.reaction"),"nuzzle");
@@ -1025,7 +1037,7 @@ try {
     await evaluate("(()=>{const p=document.querySelector('.pet'),r=p.getBoundingClientRect();p.dispatchEvent(new MouseEvent('click',{clientX:r.x+r.width*.5,clientY:r.y+r.height*.2,detail:1}));})()"); assert.equal(await evaluate("document.body.dataset.reaction"),"shy");
     await delay(1800); assert.equal(await evaluate("document.body.dataset.reaction"),undefined);
   });
-  await check("Pet hint renders short copy in a cartoon bubble",async()=>{
+  await check("Pet hint renders short copy in a cartoon bubble", ["pet", "appearance"], async()=>{
     getRuntime().trayMenu.getMenuItemById("locale-en").click();
     await until(() => evaluate("document.documentElement.lang === 'en' && document.querySelector('.desktop-pet').getAttribute('aria-label').includes('desktop pet')"));
     setMode("dodge");setMode("pet");await delay(150);
@@ -1081,7 +1093,7 @@ try {
     await evaluate("window.bluepet.setPetHint('')");await until(()=>!hintWin.isVisible());
     getRuntime().trayMenu.emit("menu-will-close",{});
   });
-  await check("Pet idle variety maps to distinct gentle motions",async()=>{
+  await check("Pet idle variety maps to distinct gentle motions", ["pet", "motion"], async()=>{
     setMode("pet");await delay(100);
     for(const [kind,name] of [["idle-bob","idle-bob"],["idle-sway","idle-sway"]]) {
       const animations=await evaluate(`(()=>{const svg=document.querySelector('.mascot-svg');svg.dataset.reaction=${JSON.stringify(kind)};return document.querySelector('.mascot').getAnimations().map(animation=>animation.animationName);})()`);
@@ -1089,7 +1101,7 @@ try {
     }
     await evaluate("delete document.querySelector('.mascot-svg').dataset.reaction");
   });
-  await check("Pet touch: tickle belly, poke, cheek nuzzle and native long-press cuddle",async()=>{
+  await check("Pet touch: tickle belly, poke, cheek nuzzle and native long-press cuddle", ["focus", "pet", "interaction"], async()=>{
     setMode("dodge"); setMode("pet"); await delay(150);
     getRuntime().trayMenu.emit("menu-will-show",{});
     const poke=(x,y)=>evaluate(`(()=>{const p=document.querySelector('.pet'),r=p.getBoundingClientRect();p.dispatchEvent(new MouseEvent('click',{clientX:r.x+r.width*${x},clientY:r.y+r.height*${y},detail:1}));})()`);
@@ -1124,7 +1136,7 @@ try {
     showChat();await delay(100);assert.equal(await evaluate("document.body.dataset.reaction"),undefined);
     restorePetFrame();getRuntime().trayMenu.emit("menu-will-close",{});
   });
-  await check("Pet drag: native pointer capture, threshold, release without click and stable placement",async()=>{
+  await check("Pet drag: native pointer capture, threshold, release without click and stable placement", ["focus", "pet", "drag"], async()=>{
     setMode("dodge");setMode("pet");await delay(200);
     const win=getRuntime().petWindow;
     await focusWindow(win);
@@ -1161,7 +1173,7 @@ try {
     at("mouseUp",target,{button:"left",clickCount:1});await delay(100);
     assert.equal(await evaluate("document.body.dataset.reaction"),"poke","a fresh click still works after dragging");
   });
-  await check("Pet drag: screen clamping, invalid coordinates, Escape/chat/hide/mode cancellation",async()=>{
+  await check("Pet drag: screen clamping, invalid coordinates, Escape/chat/hide/mode cancellation", ["focus", "pet", "drag"], async()=>{
     setMode("pet");await delay(150);
     const send=request=>evaluate("window.bluepet.dragPet("+JSON.stringify(request)+")");
     const origin=getRuntime().position;
@@ -1184,7 +1196,7 @@ try {
     await send({phase:"start",point:getRuntime().position});await until(()=>getRuntime().dragPending);
     setMode("dodge");assert.equal(getRuntime().dragPending,false);setMode("pet");
   });
-  await check("Pet makes a sparse autonomous gesture, rests, and yields to interaction/chat/hide",async()=>{
+  await check("Pet makes a sparse autonomous gesture, rests, and yields to interaction/chat/hide", ["soak", "pet", "motion"], async()=>{
     setMode("dodge"); setMode("pet"); await delay(150);
     // Keep the real mouse position from perturbing this unattended-idle check.
     getRuntime().trayMenu.emit("menu-will-show",{});
@@ -1212,7 +1224,7 @@ try {
     assert.equal(await evaluate("new DOMMatrix(getComputedStyle(document.querySelector('.lid')).transform).m42"),-20);
     await toggleAndWait(); restorePetFrame(); getRuntime().trayMenu.emit("menu-will-close",{});
   });
-  await check("Pet gaze rests after five still seconds and wakes on cursor movement",async()=>{
+  await check("Pet gaze rests after five still seconds and wakes on cursor movement", ["soak", "pet", "gaze"], async()=>{
     const realCursor=screen.getCursorScreenPoint;
     let cursor={x:getRuntime().position.x+240,y:getRuntime().position.y+66};
     screen.getCursorScreenPoint=()=>({...cursor});
@@ -1228,7 +1240,7 @@ try {
       screen.getCursorScreenPoint=realCursor;
     }
   });
-  await check("reduced-motion mode keeps eyes open and disables decorative motion",async()=>{
+  await check("reduced-motion mode keeps eyes open and disables decorative motion", ["motion", "gaze"], async()=>{
     const win=getRuntime().petWindow;
     win.webContents.debugger.attach("1.3");
     try {
@@ -1243,7 +1255,7 @@ try {
       win.webContents.debugger.detach();
     }
   });
-  await check("Pet avoidance: no wandering, fast reflex, and hover interaction priority",async()=>{
+  await check("Pet avoidance: no wandering, fast reflex, and hover interaction priority", ["pet", "dodge", "interaction"], async()=>{
     setMode("dodge"); setMode("pet"); await until(()=>!getRuntime().modeTransition);
     const initial=getRuntime().position,area=screen.getDisplayNearestPoint(initial).workArea;
     const centered={x:area.x+area.width/2-66,y:area.y+area.height/2-66};
@@ -1273,7 +1285,7 @@ try {
       await evaluate("window.bluepet.setPetHover(false)");
     }
   });
-  await check("Pet returns to its pre-dodge position three seconds after avoidance stops",async()=>{
+  await check("Pet returns to its pre-dodge position three seconds after avoidance stops", ["soak", "pet", "dodge"], async()=>{
     setMode("dodge");setMode("pet");await until(()=>!getRuntime().modeTransition,7000);
     const initial=getRuntime().position,area=screen.getDisplayNearestPoint(initial).workArea;
     const realPoint=screen.getCursorScreenPoint();
@@ -1343,7 +1355,7 @@ try {
       await evaluate("window.bluepet.setPetHover(false)");
     }
   });
-  await check("Dodge reflex: fast approach launches a visible native window, decays and resets after chat/hide",async()=>{
+  await check("Dodge reflex: fast approach launches a visible native window, decays and resets after chat/hide", ["dodge", "motion"], async()=>{
     setMode("pet");await delay(150);
     const origin=getRuntime().position,area=screen.getDisplayNearestPoint(origin).workArea;
     const target={x:area.x+area.width/2-66,y:area.y+area.height/2-66};
@@ -1388,7 +1400,7 @@ try {
       setMode("dodge");
     }
   });
-  await check("Dodge stays continuously visible for 10 seconds, and only manual hide conceals it",async()=>{
+  await check("Dodge stays continuously visible for 10 seconds, and only manual hide conceals it", ["soak", "dodge", "recovery"], async()=>{
     setMode("dodge");
     const start=performance.now();
     while(performance.now()-start<10000) {
@@ -1402,7 +1414,7 @@ try {
     await toggleAndWait(); await delay(3300); assert.equal(getRuntime().petWindow.isVisible(),false);
     await toggleAndWait(); assert.equal(getRuntime().petWindow.isVisible(),true);
   });
-  await check("Dodge chat and native menu roundtrips keep the current visibility",async()=>{
+  await check("Dodge chat and native menu roundtrips keep the current visibility", ["focus", "dodge", "chat", "menu"], async()=>{
     showChat(); await delay(300); assert.equal(getRuntime().petWindow.isVisible(),true);
     restorePetFrame(); await delay(200);
     const menu=getRuntime().trayMenu, before=getRuntime().position;
@@ -1410,7 +1422,7 @@ try {
     assert.equal(getRuntime().petWindow.isVisible(),true); assert.deepEqual(getRuntime().position,before);
     menu.emit("menu-will-close",{}); assert.equal(getRuntime().petWindow.isVisible(),true);
   });
-  await check("recover unexpected hide, monitor changes, sleep wake, renderer reload and window close",async()=>{
+  await check("recover unexpected hide, monitor changes, sleep wake, renderer reload and window close", ["recovery", "hide"], async()=>{
     setMode("pet"); await delay(100); getRuntime().petWindow.hide();
     await until(()=>getRuntime().petWindow.isVisible(),2200); await visiblePixels();
     getRuntime().petWindow.setBounds({x:-9000,y:-9000,width:132,height:132});
@@ -1423,7 +1435,7 @@ try {
     await until(()=>getRuntime().petWindow&&getRuntime().petWindow.id!==old&&!getRuntime().petWindow.webContents.isLoading());
     await delay(180);await visiblePixels();
   });
-  await check("Recovery: Pet and Pac-Man watchdog respect hidden state without stealing focus", async () => {
+  await check("Recovery: Pet and Pac-Man watchdog respect hidden state without stealing focus", ["recovery", "hide", "pacman"], async () => {
     for (const mode of ["pet", "pacman"]) {
       setMode(mode);
       await until(() => (mode === "pet" ? getRuntime().petWindow : getRuntime().gameWindow)?.isVisible());
@@ -1453,7 +1465,7 @@ try {
     }
     setMode("pet");
   });
-  await check("Pac-Man resize: real native shrink preserves progress and every bean remains collectable", async () => {
+  await check("Pac-Man resize: real native shrink preserves progress and every bean remains collectable", ["focus", "pacman", "recovery"], async () => {
     setMode("pacman");
     await until(() => getRuntime().gameWindow?.isVisible());
     const win = getRuntime().gameWindow;
@@ -1487,7 +1499,7 @@ try {
     assert.equal(await js("import('./game.js').then(({game})=>game.level)"), 4);
     setMode("pet");
   });
-  await check("Pac-Man: smaller lidless sprite, real bean clears accelerate each round, hide/restore and restart",async()=>{
+  await check("Pac-Man: smaller lidless sprite, real bean clears accelerate each round, hide/restore and restart", ["smoke", "focus", "pacman", "mode"], async()=>{
     setMode("pacman");await until(()=>getRuntime().gameWindow?.isVisible());
     const win=getRuntime().gameWindow;await delay(150);
     const js=code=>win.webContents.executeJavaScript(code);
@@ -1537,7 +1549,7 @@ try {
     assert.equal(await getRuntime().gameWindow.webContents.executeJavaScript("document.querySelector('#speed').textContent"),"1.00×");
     setMode("pet");
   });
-  if(process.env.BLUEPET_TEST_CHAT==="1") await check("Chat live: Flash reply reaches the bubble with a 50-character cap",async()=>{
+  if(process.env.BLUEPET_TEST_CHAT==="1") await check("Chat live: Flash reply reaches the bubble with a 50-character cap", ["release", "chat", "live"], async()=>{
     setMode("pet");showChat();await delay(150);
     const started=performance.now();
     await evaluate("document.querySelector('#message').value='跟我打个招呼吧';document.querySelector('#chat-form').requestSubmit()");
