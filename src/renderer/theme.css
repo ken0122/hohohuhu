@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --surface: #fbfcff;
   --surface-raised: #ffffff;
   --ink: #17234b;
@@ -23,8 +23,34 @@
   --hint-shadow: rgba(23, 35, 75, .2);
 }
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #11182b;
+  --surface-raised: #18223a;
+  --ink: #f3f6ff;
+  --muted: #bdc8e8;
+  --muted-soft: #aebadb;
+  --border: #465579;
+  --divider: #2d3957;
+  --field: #202c49;
+  --field-focus: #273656;
+  --field-hover: #2b395a;
+  --blue: #7897ff;
+  --blue-strong: #9db2ff;
+  --blue-soft: #29395f;
+  --error: #ff9ba8;
+  --error-hover: #482632;
+  --warning: #f3c475;
+  --hint-paper: #202941;
+  --selection: #40527d;
+  --speech-shadow: rgba(0, 0, 0, .42);
+  --ground: rgba(0, 0, 0, .38);
+  --hint-shadow: rgba(0, 0, 0, .45);
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root[data-theme="system"] {
+    color-scheme: dark;
     --surface: #11182b;
     --surface-raised: #18223a;
     --ink: #f3f6ff;

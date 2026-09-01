@@ -54,13 +54,16 @@ const PET_SIZE = PET_FRAME_SIZE;
 const PET_HEAD_TOP_OFFSET = 39;
 const HINT_HEAD_GAP = 2;
 const HINT_TAIL_INSET = 3;
-const HINT_CHARACTERS_PER_LINE = 6;
+const HINT_CJK_CHARACTERS_PER_LINE = 6;
+const HINT_WESTERN_CHARACTERS_PER_LINE = 22;
+const HINT_WESTERN_WIDTH = 220;
 const HINT_LINE_HEIGHT = 14;
 const HINT_CHROME_HEIGHT = 25;
 app.setName("呼噜呼噜");
 const HIDE_SHORTCUT = process.env.BLUEPET_HIDE_SHORTCUT || "Control+Alt+B";
 const CHAT_SHORTCUT = process.env.BLUEPET_CHAT_SHORTCUT || "Control+Alt+Space";
 const MODE_SHORTCUT = process.env.BLUEPET_MODE_SHORTCUT || "Control+Alt+Command+M";
+const CHARACTER_SHORTCUT = process.env.BLUEPET_CHARACTER_SHORTCUT || "Control+Alt+Command+C";
 const requestedMode = normalizeMode(
   process.argv.find((arg) => arg.startsWith("--mode="))?.split("=")[1],
 );
@@ -77,7 +80,8 @@ let position = { x: 80, y: 160 },
   velocity = { x: 48, y: 25 };
 let lastTick = performance.now(),
   lastProximity = 0,
-  lastCycle = -Infinity;
+  lastCycle = -Infinity,
+  lastCharacterCycle = -Infinity;
 let reducedMotion = false;
 let nativePosition;
 let dragSession;
@@ -220,17 +224,23 @@ function movePetWindow() {
 }
 
 function hintHeight(message) {
-  const lines = Math.max(1, Math.ceil(Array.from(message).length / HINT_CHARACTERS_PER_LINE));
+  const charactersPerLine = ["zh-CN", "zh-TW", "ja"].includes(locale) ? HINT_CJK_CHARACTERS_PER_LINE : HINT_WESTERN_CHARACTERS_PER_LINE;
+  const lines = Math.max(1, Math.ceil(Array.from(message).length / charactersPerLine));
   return lines * HINT_LINE_HEIGHT + HINT_CHROME_HEIGHT;
 }
-function hintFrame(message) {
+function hintLayout(message) {
   const height = hintHeight(message);
-  return {
-    x: Math.round(position.x),
+  const width = ["zh-CN", "zh-TW", "ja"].includes(locale) ? PET_SIZE : HINT_WESTERN_WIDTH;
+  const workArea = currentDisplay().workArea;
+  const petCenter = position.x + PET_SIZE / 2;
+  const x = Math.max(workArea.x, Math.min(workArea.x + workArea.width - width, petCenter - width / 2));
+  const bounds = {
+    x: Math.round(x),
     y: Math.round(position.y + PET_HEAD_TOP_OFFSET - HINT_HEAD_GAP - height + HINT_TAIL_INSET),
-    width: PET_SIZE,
+    width,
     height,
   };
+  return { bounds, anchorX: Math.round(petCenter - bounds.x) };
 }
 function syncHint() {
   if (!hintReady || !hintWindow || hintWindow.isDestroyed()) return;
@@ -245,8 +255,9 @@ function syncHint() {
     hintWindow.hide();
     return;
   }
-  hintWindow.setBounds(hintFrame(hintMessage), false);
-  hintWindow.webContents.send("hint:message", hintMessage);
+  const layout = hintLayout(hintMessage);
+  hintWindow.setBounds(layout.bounds, false);
+  hintWindow.webContents.send("hint:message", { message: hintMessage, anchorX: layout.anchorX });
   raiseWindow(hintWindow);
   hintWindow.showInactive();
 }
@@ -405,9 +416,11 @@ export function restorePetFrame() {
   syncWindows({ focus: state.mode === MODES.PET && !state.manualHidden });
 }
 export function showChat() {
+  const wasHidden = state.manualHidden || !activeWindow()?.isVisible();
   interruptInteraction();
   if (state.mode === MODES.PACMAN) setMode(MODES.PET);
   dispatch("chat");
+  if (wasHidden) pinPet();
   syncWindows({ focus: true });
   rebuildTrayMenu();
 }
@@ -416,11 +429,19 @@ export function toggleHidden() {
   // Unexpectedly hidden windows recover on the first press.
   const target = activeWindow();
   const currentlyVisible = !state.manualHidden && target?.isVisible();
-  dispatch(currentlyVisible ? "hide" : "reveal");
-  if (!state.manualHidden) {
-    position = fitPet(position, cursorDisplay().workArea, PET_SIZE);
-    recoverWindows({ focus: true });
-  } else animateHide(target);
+  if (!currentlyVisible) {
+    summonPet();
+    return;
+  }
+  dispatch("hide");
+  animateHide(target);
+  rebuildTrayMenu();
+}
+export function summonPet() {
+  interruptInteraction();
+  dispatch("reveal");
+  pinPet();
+  recoverWindows({ focus: true });
   rebuildTrayMenu();
 }
 function closeGame() {
@@ -505,6 +526,7 @@ function createGameWindow({ focus = false } = {}) {
 export function setMode(nextMode) {
   nextMode = normalizeMode(nextMode);
   if (!Object.values(MODES).includes(nextMode)) return;
+  const wasHidden = state.manualHidden || !activeWindow()?.isVisible();
   cancelHide();
   const previousMode = state.mode;
   if (previousMode !== nextMode) cursorAttention.reset();
@@ -518,6 +540,7 @@ export function setMode(nextMode) {
   interruptInteraction({ preserveMotion: true });
   closeGame();
   dispatch("mode", { mode: nextMode });
+  if (wasHidden) pinPet();
   modeTransition = undefined;
   if (smooth && !systemPreferences.getAnimationSettings().prefersReducedMotion) {
     velocity = momentum;
@@ -540,6 +563,16 @@ export function cycleMode() {
   if (state.manualHidden || now - lastCycle < 400) return;
   lastCycle = now;
   setMode(nextMode(state.mode));
+}
+export async function cycleCharacter() {
+  const now = performance.now();
+  if (now - lastCharacterCycle < 400) return;
+  lastCharacterCycle = now;
+  try {
+    await characterLibrary?.cycle();
+  } catch {
+    if (Notification.isSupported()) new Notification({ title: brand(locale), body: t(locale, "characterOperationFailed") }).show();
+  }
 }
 export function recoverWindows({ focus = false, relocateGame = true } = {}) {
   if (quitting) return;
@@ -725,8 +758,9 @@ function createPetWindow() {
 }
 function createHintWindow() {
   hintReady = false;
+  const layout = hintLayout(hintMessage);
   const win = new BrowserWindow({
-    ...hintFrame(hintMessage),
+    ...layout.bounds,
     frame: false,
     transparent: true,
     resizable: false,
@@ -839,38 +873,7 @@ function rebuildTrayMenu() {
       click: () => setMode(value),
     })),
     { type: "separator" },
-    {
-      id: "cycle-mode",
-      label: t(locale, "cycleMode"),
-      accelerator: MODE_SHORTCUT,
-      registerAccelerator: false,
-      click: cycleMode,
-    },
-    {
-      id: "chat",
-      label: t(locale, "chat"),
-      accelerator: CHAT_SHORTCUT,
-      registerAccelerator: false,
-      click: showChat,
-    },
-    {
-      id: "hide",
-      label: t(locale, state.manualHidden ? "show" : "hide"),
-      accelerator: HIDE_SHORTCUT,
-      registerAccelerator: false,
-      click: toggleHidden,
-    },
-    {
-      id: "recover",
-      label: t(locale, "recover"),
-      click: () => {
-        dispatch("reveal");
-        pinPet();
-        recoverWindows({ focus: true });
-        rebuildTrayMenu();
-      },
-    },
-    { type: "separator" },
+    { id: "characters", label: t(locale, "characters"), click: () => characterLibrary.show() },
     {
       id: "appearance", label: t(locale, "appearance"), submenu: THEMES.map(theme => ({
         id: "theme-" + theme, type: "radio", label: t(locale, theme), checked: preferences().theme === theme,
@@ -884,6 +887,15 @@ function rebuildTrayMenu() {
         checked: preferences().locale === choice, click: () => setPreference({ locale: choice }),
       })),
     },
+    {
+      id: "shortcuts", label: t(locale, "shortcuts"), submenu: [
+        { id: "cycle-mode", label: t(locale, "cycleMode"), accelerator: MODE_SHORTCUT, registerAccelerator: false, click: cycleMode },
+        { id: "cycle-character", label: t(locale, "cycleCharacter"), accelerator: CHARACTER_SHORTCUT, registerAccelerator: false, click: cycleCharacter },
+        { id: "chat", label: t(locale, "chat"), accelerator: CHAT_SHORTCUT, registerAccelerator: false, click: showChat },
+        { id: "hide", label: t(locale, state.manualHidden ? "show" : "hide"), accelerator: HIDE_SHORTCUT, registerAccelerator: false, click: toggleHidden },
+        { id: "summon", label: t(locale, "summon"), accelerator: HIDE_SHORTCUT, registerAccelerator: false, click: summonPet },
+      ],
+    },
     { type: "separator" },
     {
       label: t(locale, "login"),
@@ -892,7 +904,6 @@ function rebuildTrayMenu() {
       enabled: app.isPackaged,
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
     },
-    { id: "characters", label: t(locale, "characters"), click: () => characterLibrary.show() },
     { id: "api-settings", label: t(locale, "chatSettings"), click: showApiSettings },
     { id: "quit", label: t(locale, "quit", { brand: brand(locale) }), click: () => app.quit() },
   ]);
@@ -995,11 +1006,7 @@ if (!hasLock) app.quit();
 app.on("second-instance", (_event, argv) => {
   const next = normalizeMode(argv.find((arg) => arg.startsWith("--mode="))?.split("=")[1]);
   if (Object.values(MODES).includes(next)) setMode(next);
-  else {
-    dispatch("reveal");
-    recoverWindows({ focus: state.chatOpen });
-    rebuildTrayMenu();
-  }
+  else summonPet();
 });
 export const ready = app.whenReady().then(async () => {
   if (!hasLock) return;
@@ -1050,6 +1057,7 @@ export const ready = app.whenReady().then(async () => {
   registerShortcut(HIDE_SHORTCUT, toggleHidden, t(locale, "shortcutHide"));
   registerShortcut(CHAT_SHORTCUT, showChat, t(locale, "shortcutChat"));
   registerShortcut(MODE_SHORTCUT, cycleMode, t(locale, "shortcutMode"));
+  registerShortcut(CHARACTER_SHORTCUT, cycleCharacter, t(locale, "shortcutCharacter"));
   nativeTheme.on("updated", updateNativeSurfaces);
   reducedMotion = systemPreferences.getAnimationSettings().prefersReducedMotion;
   // Recovery is independent of rAF: an unexpectedly hidden window stops its
@@ -1095,6 +1103,7 @@ export function getRuntime() {
     gameWindow,
     settingsWindow,
     characterWindow: characterLibrary?.window,
+    selectedCharacterId: selectedCharacter.id,
     tray,
     trayMenu,
     preferences: preferences(),

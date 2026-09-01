@@ -1,5 +1,4 @@
 :root {
-  color-scheme: light dark;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
 }
 
@@ -7,7 +6,7 @@
 html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
 .pet-hint {
   position: absolute;
-  left: 50%;
+  left: var(--hint-anchor-x, 50%);
   bottom: 12px;
   width: max-content;
   max-width: calc(6em + 22px);
@@ -25,6 +24,12 @@ html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background:
   text-wrap: pretty;
   transform: translateX(-50%) rotate(-1deg);
   transform-origin: 56% 100%;
+}
+:root:is([lang="en"], [lang="fr"], [lang="de"], [lang="ru"]) .pet-hint {
+  max-width: calc(100% - 12px);
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: auto;
 }
 .pet-hint::before {
   content: "";

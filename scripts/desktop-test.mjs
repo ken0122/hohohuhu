@@ -14,7 +14,7 @@ process.env.BLUEPET_TEST_CHARACTER_ANALYSIS = "1";
 const runtime = await import(process.env.BLUEPET_TEST_APP_ROOT
   ? pathToFileURL(path.join(process.env.BLUEPET_TEST_APP_ROOT, "src/main.js")).href
   : "../src/main.js");
-const { getRuntime, ready, setMode, cycleMode, toggleHidden, showChat, restorePetFrame, recoverWindows, shutdown } = runtime;
+const { getRuntime, ready, setMode, cycleMode, cycleCharacter, summonPet, toggleHidden, showChat, restorePetFrame, recoverWindows, shutdown } = runtime;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(fn, timeout = 4000) {
   const deadline = Date.now() + timeout;
@@ -91,8 +91,50 @@ try {
     await until(() => getRuntime().settingsWindow?.isVisible());
     const settings = getRuntime().settingsWindow;
     assert.equal(await settings.webContents.executeJavaScript("document.documentElement.lang"), "de");
+    assert.equal(await settings.webContents.executeJavaScript("document.documentElement.dataset.theme"), "dark");
     assert.equal(await settings.webContents.executeJavaScript("getComputedStyle(document.documentElement).backgroundColor"), "rgb(17, 24, 43)");
-    settings.close(); restorePetFrame();
+    assert.equal(await settings.webContents.executeJavaScript("document.querySelector('h1').textContent"), "Chat-Einstellungen");
+    assert.match(await settings.webContents.executeJavaScript("document.querySelector('.intro').textContent"), /DeepSeek/);
+    settings.close();
+    getRuntime().trayMenu.getMenuItemById("characters").click();
+    await until(() => getRuntime().characterWindow?.isVisible());
+    const library = getRuntime().characterWindow;
+    await until(() => library.webContents.executeJavaScript("document.body.dataset.ready === 'true'"));
+    assert.equal(await library.webContents.executeJavaScript("document.documentElement.lang"), "de");
+    assert.equal(await library.webContents.executeJavaScript("document.documentElement.dataset.theme"), "dark");
+    assert.equal(await library.webContents.executeJavaScript("getComputedStyle(document.documentElement).backgroundColor"), "rgb(17, 24, 43)");
+    assert.equal(await library.webContents.executeJavaScript("document.querySelector('h1').textContent"), "Charaktere");
+    assert.equal(await library.webContents.executeJavaScript("document.querySelector('#choose').textContent"), "Charakter hinzufügen…");
+    assert.match(await library.webContents.executeJavaScript("document.querySelector('#capabilities').textContent"), /Augenanimation/);
+    getRuntime().trayMenu.getMenuItemById("theme-light").click();
+    await until(() => library.webContents.executeJavaScript("document.documentElement.dataset.theme === 'light'"));
+    assert.equal(await library.webContents.executeJavaScript("getComputedStyle(document.documentElement).backgroundColor"), "rgb(251, 252, 255)");
+    assert.equal(await library.webContents.executeJavaScript("getComputedStyle(document.documentElement).colorScheme"), "light");
+    getRuntime().trayMenu.getMenuItemById("theme-dark").click();
+    await until(() => library.webContents.executeJavaScript("document.documentElement.dataset.theme === 'dark'"));
+    const librarySize = library.getSize();
+    library.setSize(720, 620);
+    await until(() => library.webContents.executeJavaScript("innerWidth === 720"));
+    for (const choice of ["de", "fr", "ru"]) {
+      getRuntime().trayMenu.getMenuItemById("locale-" + choice).click();
+      await until(() => library.webContents.executeJavaScript(`document.documentElement.lang === ${JSON.stringify(choice)}`));
+      const layout = await library.webContents.executeJavaScript(`(() => {
+        const rects = [...document.querySelectorAll('#motions button')].map(node => {
+          const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+        });
+        const overlaps = rects.some((a, index) => rects.slice(index + 1).some(b => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top));
+        const rows = [...new Set(rects.map(rect => Math.round(rect.top)))];
+        const pause = document.querySelector('#pause').getBoundingClientRect();
+        return { overlaps, rows: rows.length, pageOverflow: document.documentElement.scrollWidth > innerWidth, actionsBottom: document.querySelector('.manage-actions').getBoundingClientRect().bottom, viewportBottom: innerHeight, pauseWidth: pause.width, name: document.querySelector('#name').textContent };
+      })()`);
+      assert.deepEqual({ overlaps: layout.overlaps, rows: layout.rows, pageOverflow: layout.pageOverflow }, { overlaps: false, rows: 2, pageOverflow: false }, choice);
+      assert.ok(layout.actionsBottom <= layout.viewportBottom, choice + " actions remain reachable");
+      assert.ok(layout.pauseWidth >= 120, choice + " reserves room for the longest action");
+      assert.equal(layout.name, "Hulu Hulu", choice + " preserves the dynamic character name");
+    }
+    await writeFile(path.resolve("work/character-library-i18n-layout.png"), (await library.webContents.capturePage()).toPNG());
+    library.setSize(...librarySize);
+    library.close(); restorePetFrame();
     await toggleAndWait();
     getRuntime().trayMenu.getMenuItemById("locale-fr").click();
     assert.equal(getRuntime().state.manualHidden, true);
@@ -801,12 +843,44 @@ try {
     assert.match(petMode.label,/ⓘ$/);assert.equal(petMode.toolTip,"拖动换位置 · 长按抱抱 · 悬停摸头挠肚肚 · 方向键移动");
     assert.equal(await evaluate("document.querySelector('.pet').hasAttribute('title')"),false,"operation help no longer covers the pet as an HTML tooltip");
   });
-  await check("three global shortcuts registered; menu cannot double-register accelerators", async () => {
+  await check("shortcut submenu order, four registrations and no menu double-registration", async () => {
     assert.ok(globalShortcut.isRegistered("Control+Alt+B"));
     assert.ok(globalShortcut.isRegistered("Control+Alt+Space"));
     assert.ok(globalShortcut.isRegistered("Control+Alt+Command+M"));
+    assert.ok(globalShortcut.isRegistered("Control+Alt+Command+C"));
+    const topLevel = getRuntime().trayMenu.items.map(item => item.id).filter(Boolean);
+    assert.deepEqual(topLevel.slice(3, 7), ["characters", "appearance", "language", "shortcuts"]);
     assert.equal(getRuntime().trayMenu.getMenuItemById("hide").registerAccelerator,false);
+    assert.equal(getRuntime().trayMenu.getMenuItemById("summon").registerAccelerator,false);
     assert.equal(getRuntime().trayMenu.getMenuItemById("cycle-mode").registerAccelerator,false);
+    assert.equal(getRuntime().trayMenu.getMenuItemById("cycle-character").registerAccelerator,false);
+    assert.equal(getRuntime().trayMenu.getMenuItemById("hide").accelerator, "Control+Alt+B");
+    assert.equal(getRuntime().trayMenu.getMenuItemById("summon").accelerator, "Control+Alt+B");
+  });
+  await check("Character shortcut cycles once per press without revealing a hidden pet", async () => {
+    if (!getRuntime().state.manualHidden) await toggleAndWait();
+    const before = getRuntime().selectedCharacterId;
+    await cycleCharacter();
+    const next = getRuntime().selectedCharacterId;
+    assert.notEqual(next, before);
+    await cycleCharacter();
+    assert.equal(getRuntime().selectedCharacterId, next, "holding the shortcut cannot skip characters");
+    assert.equal(getRuntime().state.manualHidden, true);
+    assert.equal(getRuntime().petWindow.isVisible(), false);
+    await delay(420); await cycleCharacter();
+    await delay(420); await cycleCharacter();
+    assert.equal(getRuntime().selectedCharacterId, before);
+    await toggleAndWait();
+  });
+  await check("Hide shortcut summons to the initial position on every redisplay", async () => {
+    setMode("pet"); summonPet(); await until(() => getRuntime().petWindow.isVisible());
+    const initial = getRuntime().position;
+    await evaluate(`window.bluepet.dragPet({phase:'start',point:{x:${initial.x + 66},y:${initial.y + 66}}});window.bluepet.dragPet({phase:'move',point:{x:${initial.x - 34},y:${initial.y - 14}}});window.bluepet.dragPet({phase:'end',point:{x:${initial.x - 34},y:${initial.y - 14}}})`);
+    await until(() => Math.abs(getRuntime().position.x - initial.x) > 50);
+    await toggleAndWait();
+    assert.equal(getRuntime().state.manualHidden, true);
+    toggleHidden(); await until(() => getRuntime().petWindow.isVisible());
+    assert.deepEqual(getRuntime().position, initial);
   });
   await check("Mode shortcut: cycle order, repeat guard, chat exit and hidden-pet protection",async()=>{
     setMode("dodge");cycleMode();assert.equal(getRuntime().state.mode,"pet");
@@ -950,23 +1024,52 @@ try {
     await delay(1800); assert.equal(await evaluate("document.body.dataset.reaction"),undefined);
   });
   await check("Pet hint renders short copy in a cartoon bubble",async()=>{
+    getRuntime().trayMenu.getMenuItemById("locale-en").click();
+    await until(() => evaluate("document.documentElement.lang === 'en' && document.querySelector('.desktop-pet').getAttribute('aria-label').includes('desktop pet')"));
     setMode("dodge");setMode("pet");await delay(150);
     getRuntime().trayMenu.emit("menu-will-show",{});
     await evaluate("document.querySelector('.pet').click()");
     assert.equal(await evaluate("document.body.dataset.reaction"),"hop");
     await until(()=>getRuntime().hintWindow?.isVisible());
+    assert.equal(getRuntime().hintMessage, "I’m right here!");
     const hintWin=getRuntime().hintWindow;
-    const hintStyle=await hintWin.webContents.executeJavaScript("(()=>{const h=document.querySelector('#pet-hint'),s=getComputedStyle(h),tail=getComputedStyle(h,'::before');return {text:h.textContent,width:h.getBoundingClientRect().width,background:s.backgroundColor,color:s.color,border:s.borderTopWidth,shadow:s.boxShadow,tail:tail.content};})()");
-    assert.ok(hintStyle.text.length>0);assert.equal(hintStyle.background,"rgb(255, 253, 244)");
-    assert.equal(hintStyle.color,"rgb(23, 35, 75)");assert.equal(hintStyle.border,"2px");
-    assert.notEqual(hintStyle.shadow,"none");assert.notEqual(hintStyle.tail,"none");
+    await evaluate("window.bluepet.setPetHint('That head pat feels really nice')");
+    await until(() => getRuntime().hintMessage === "That head pat feels really nice");
+    const westernLayout = await hintWin.webContents.executeJavaScript(`(() => {
+      const hint = document.querySelector('#pet-hint'), range = document.createRange(); range.selectNodeContents(hint);
+      return { width: hint.getBoundingClientRect().width, lines: range.getClientRects().length, anchor: parseFloat(getComputedStyle(hint).left) };
+    })()`);
+    assert.equal(hintWin.getBounds().width, 220);
+    assert.ok(westernLayout.width >= 150 && westernLayout.lines <= 2, JSON.stringify(westernLayout));
+    assert.ok(Math.abs(westernLayout.anchor - (getRuntime().position.x + 66 - hintWin.getBounds().x)) <= 1, "wide bubble tail remains anchored to the pet");
+    await writeFile(path.resolve("work/pet-western-bubble.png"),(await hintWin.webContents.capturePage()).toPNG());
+    getRuntime().trayMenu.getMenuItemById("locale-ja").click();
+    await until(() => evaluate("document.documentElement.lang === 'ja' && document.querySelector('.desktop-pet').getAttribute('aria-label').includes('デスクトップ')"));
+    await until(() => getRuntime().hintMessage === "");
+    await evaluate("(()=>{const p=document.querySelector('.pet'),r=p.getBoundingClientRect();p.dispatchEvent(new MouseEvent('click',{clientX:r.x+r.width*.5,clientY:r.y+r.height*.2,detail:1}));})()");
+    await until(() => getRuntime().hintMessage === "ちょっと照れる…");
+    getRuntime().trayMenu.getMenuItemById("locale-zh-CN").click();
+    await until(() => evaluate("document.documentElement.lang === 'zh-CN'") && getRuntime().hintMessage === "");
+    setMode("dodge");setMode("pet");await delay(150);
+    await evaluate("document.querySelector('.pet').click()");
+    await until(() => /[\u4e00-\u9fff]/.test(getRuntime().hintMessage));
+    await until(() => evaluate("document.body.dataset.reaction === undefined"), 1200);
+    const lingerStarted = performance.now(), lingeringMessage = getRuntime().hintMessage;
+    assert.ok(lingeringMessage, "interaction copy remains after its motion ends");
+    await until(() => getRuntime().hintMessage === "", 1600);
+    assert.ok(performance.now() - lingerStarted >= 900, "interaction copy gets a readable post-motion hold");
+    await evaluate("window.bluepet.setPetHint('嘿嘿！')"); await until(() => getRuntime().hintMessage === "嘿嘿！");
+    const visibleHintStyle=await hintWin.webContents.executeJavaScript("(()=>{const h=document.querySelector('#pet-hint'),s=getComputedStyle(h),tail=getComputedStyle(h,'::before');return {text:h.textContent,width:h.getBoundingClientRect().width,background:s.backgroundColor,color:s.color,border:s.borderTopWidth,shadow:s.boxShadow,tail:tail.content};})()");
+    assert.equal(visibleHintStyle.background,nativeTheme.shouldUseDarkColors ? "rgb(32, 41, 65)" : "rgb(255, 253, 244)");
+    assert.equal(visibleHintStyle.color,nativeTheme.shouldUseDarkColors ? "rgb(243, 246, 255)" : "rgb(23, 35, 75)");assert.equal(visibleHintStyle.border,"2px");
+    assert.notEqual(visibleHintStyle.shadow,"none");assert.notEqual(visibleHintStyle.tail,"none");
     const petBounds=getRuntime().petWindow.getBounds(),shortBounds=hintWin.getBounds();
     assert.equal(petBounds.y+39-(shortBounds.y+shortBounds.height-3),2,"bubble tip stays two pixels above the pet head");
     await evaluate("window.bluepet.setPetHint('叮叮叮，今天也亮起来！')");
     await until(()=>getRuntime().hintMessage==='叮叮叮，今天也亮起来！');await delay(80);
     const longHint=await hintWin.webContents.executeJavaScript(`(()=>{const h=document.querySelector('#pet-hint'),text=h.firstChild,rows=new Map();for(let i=0;i<text.length;i++){const range=document.createRange();range.setStart(text,i);range.setEnd(text,i+1);const top=Math.round(range.getBoundingClientRect().top);rows.set(top,(rows.get(top)||0)+1);}return {width:h.getBoundingClientRect().width,maxCharactersPerLine:Math.max(...rows.values()),lines:rows.size};})()`);
     const longBounds=hintWin.getBounds();
-    assert.ok(longHint.width>hintStyle.width,"long interaction copy expands the bubble");
+    assert.ok(longHint.width>visibleHintStyle.width,"long interaction copy expands the bubble");
     assert.ok(longHint.maxCharactersPerLine<=6,"interaction copy uses no more than six characters per line");
     assert.ok(longHint.lines>=2,"long interaction copy wraps instead of overflowing");
     assert.ok(longBounds.height>shortBounds.height,"long copy grows upward in its own native window");
@@ -1091,7 +1194,7 @@ try {
     assert.equal(await evaluate("document.body.dataset.reaction"),"idle-look");
     assert.ok(await evaluate("document.querySelector('#pet-hint').textContent.length>0"),"idle gesture carries a short utterance");
     await until(()=>getRuntime().hintWindow?.isVisible());
-    assert.equal(await getRuntime().hintWindow.webContents.executeJavaScript("getComputedStyle(document.querySelector('#pet-hint')).backgroundColor"),"rgb(255, 253, 244)");
+    assert.equal(await getRuntime().hintWindow.webContents.executeJavaScript("getComputedStyle(document.querySelector('#pet-hint')).backgroundColor"),nativeTheme.shouldUseDarkColors ? "rgb(32, 41, 65)" : "rgb(255, 253, 244)");
     await writeFile(path.resolve("work/pet-idle-look.png"),(await getRuntime().petWindow.webContents.capturePage()).toPNG());
     await until(()=>evaluate("document.body.dataset.reaction===undefined"),2000);
     assert.ok(await evaluate("document.querySelector('#pet-hint').textContent.length>0"),"idle bubble lingers after the gesture rests");

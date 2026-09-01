@@ -1,5 +1,5 @@
 import { BASIC_PROFILE, BLACK_CAT_PROFILE, BLUE_ONE_EYE_PROFILE, SUNNY_YELLOW_PROFILE, validateCharacterProfile } from "./character-profile.js";
-import { localizedBuiltinProfile } from "./localized-profiles.js";
+import { localizedBuiltinProfile, localizedCustomProfile } from "./localized-profiles.js";
 
 // App-owned bindings, not an import format. Untrusted artwork/metadata must be
 // validated by a future importer before it can reach the renderer.
@@ -145,13 +145,14 @@ export function characterDefinition(id, profile, analysis, detectedEyeRig, local
   if (id === BLACK_CAT.id) return locale ? { ...BLACK_CAT, profile: localizedBuiltinProfile(id, BLACK_CAT.profile, locale) } : BLACK_CAT;
   if (id === SUNNY_YELLOW.id) return locale ? { ...SUNNY_YELLOW, profile: localizedBuiltinProfile(id, SUNNY_YELLOW.profile, locale) } : SUNNY_YELLOW;
   const rig = importedEyeRig(analysis?.parts, detectedEyeRig);
+  const customProfile = profile ? validateCharacterProfile(profile) : BASIC_PROFILE;
   return {
     ...BASIC_SVG,
     id,
     parts: Object.freeze({ root: null, pupil: ".imported-pupils" }),
     gaze: rig.gaze,
     overlays: rig.overlays,
-    profile: profile ? validateCharacterProfile(profile) : BASIC_PROFILE,
+    profile: locale ? localizedCustomProfile(customProfile, locale) : customProfile,
     interactionParts: analysis?.parts || Object.freeze([]),
   };
 }

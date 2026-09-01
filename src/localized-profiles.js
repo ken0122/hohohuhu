@@ -1,12 +1,23 @@
 import { validateCharacterProfile } from "./character-profile.js";
 
 const COMMON = {
+  "zh-CN": { reactions:["摸摸头真舒服","好痒呀！","别戳肚肚啦","再抱一下","贴贴～","我在这里！","有点害羞…"], near:["你来啦","再陪我一会儿"], idle:["看看四周…","伸个懒腰","呼噜…","晃呀晃～"] },
   "zh-TW": { reactions:["摸摸頭真舒服","好癢呀！","別戳肚肚啦","再抱一下","貼貼～","我在這裡！","有點害羞…"], near:["你來啦","再陪我一會兒"], idle:["看看四周…","伸個懶腰","呼嚕…","晃呀晃～"] },
   en: { reactions:["That head pat feels nice","Hehe, that tickles!","Hey, don’t poke my belly","One more cuddle","Snuggle time","I’m right here!","A little shy…"], near:["You’re here","Stay a little longer"], idle:["Looking around…","A little stretch","Purr…","Swaying gently"] },
   ja: { reactions:["なでなで、気持ちいい","わっ、くすぐったい！","おなかをつつかないで","もう少し抱っこ","すりすり～","ここにいるよ！","ちょっと照れる…"], near:["来てくれたね","もう少し一緒にいて"], idle:["きょろきょろ…","のびをしよう","ごろごろ…","ゆらゆら～"] },
   fr: { reactions:["J’aime cette caresse","Hé, ça chatouille !","Pas le ventre !","Encore un câlin","Tout contre toi","Je suis là !","Un peu timide…"], near:["Te voilà","Reste encore un peu"], idle:["Je regarde…","Un petit étirement","Ronron…","Je me balance"] },
   de: { reactions:["Das Streicheln tut gut","He, das kitzelt!","Nicht in den Bauch stupsen","Noch eine Umarmung","Ganz nah bei dir","Ich bin hier!","Etwas schüchtern…"], near:["Du bist da","Bleib noch ein wenig"], idle:["Ich schaue mich um…","Kurz strecken","Schnurr…","Sanft hin und her"] },
   ru: { reactions:["Гладить так приятно","Ой, щекотно!","Не тыкай в животик","Ещё обнимашку","Прижмусь к тебе","Я здесь!","Немного стесняюсь…"], near:["Ты пришёл","Побудь ещё немного"], idle:["Осмотрюсь…","Немного потянусь","Мур…","Качаюсь тихонько"] },
+};
+
+const CUSTOM_EGG = {
+  "zh-CN": "发现小秘密啦",
+  "zh-TW": "發現小秘密啦",
+  en: "You found my little secret",
+  ja: "小さな秘密、見つかったね",
+  fr: "Tu as découvert mon petit secret",
+  de: "Du hast mein kleines Geheimnis entdeckt",
+  ru: "Ты нашёл мой маленький секрет",
 };
 
 const SPECIAL = {
@@ -47,5 +58,18 @@ export function localizedBuiltinProfile(id, base, locale) {
     proximity: { enter: { ...base.proximity.enter, messages: [common.near[0]] }, dwell: { ...base.proximity.dwell, messages: [common.near[1]] } },
     idle: base.idle.map((item, index) => ({ ...item, messages: [common.idle[index]] })),
     easterEgg: { ...base.easterEgg, label: special[3], description: special[4], reaction: { ...base.easterEgg.reaction, messages: [special[5]] } },
+  });
+}
+
+export function localizedCustomProfile(base, locale) {
+  const common = COMMON[locale];
+  if (!common) return validateCharacterProfile(base);
+  const reactions = Object.fromEntries(INTENTS.map((intent, index) => [intent, { ...base.reactions[intent], messages: [common.reactions[index]] }]));
+  return validateCharacterProfile({
+    ...base,
+    reactions,
+    proximity: { enter: { ...base.proximity.enter, messages: [common.near[0]] }, dwell: { ...base.proximity.dwell, messages: [common.near[1]] } },
+    idle: base.idle.map((item, index) => ({ ...item, messages: [common.idle[index % common.idle.length]] })),
+    easterEgg: { ...base.easterEgg, reaction: { ...base.easterEgg.reaction, messages: [CUSTOM_EGG[locale]] } },
   });
 }

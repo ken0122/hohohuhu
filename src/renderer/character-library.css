@@ -1,4 +1,4 @@
-:root { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif; color: var(--ink); background: var(--surface); font-size: 13px; line-height: 1.5; color-scheme: light dark; }
+:root { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif; color: var(--ink); background: var(--surface); font-size: 13px; line-height: 1.5; }
 * { box-sizing: border-box; }
 body { margin: 0; height: 100vh; display: flex; flex-direction: column; }
 [hidden] { display: none !important; }
@@ -26,7 +26,7 @@ figure::after { content: ""; width: 106px; height: 10px; margin-top: -4px; borde
 figcaption { position: absolute; inset: auto 0 6px; color: var(--muted); font-size: 11px; text-align: center; }
 #large { width: 144px; height: 144px; }
 #original-slot, #original-image { display: block; width: 144px; height: 144px; object-fit: contain; }
-.preview-tools { display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: end; gap: 24px; padding-top: 4px; }
+.preview-tools { display: grid; grid-template-columns: minmax(168px, 180px) minmax(0, 1fr); align-items: end; gap: clamp(16px, 3vw, 24px); padding-top: 4px; }
 .sizes { display: flex; align-items: end; gap: 16px; }
 .sizes > div { display: grid; justify-items: center; align-content: end; min-height: 100px; flex: 0 0 76px; }
 .sizes span { color: var(--muted-soft); font-size: 10px; margin-top: 2px; }
@@ -34,10 +34,12 @@ figcaption { position: absolute; inset: auto 0 6px; color: var(--muted); font-si
 #game { width: 64px; height: 64px; }
 fieldset { border: 0; margin: 0; padding: 0; }
 legend { padding: 0; margin-bottom: 6px; font-size: 11px; color: var(--muted-soft); }
-.motion-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.gait-group, .motion-secondary { display: flex; flex-wrap: wrap; gap: 6px; }
+.motion-row { display: grid; gap: 8px; min-width: 0; }
+.gait-group, .motion-secondary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; min-width: 0; }
+.motion-secondary { grid-template-columns: minmax(0, .8fr) minmax(0, .9fr) minmax(120px, 1.35fr); }
 .gait-group { padding: 3px; border-radius: 12px; background: var(--field); }
 .gait-group button { background: transparent; padding-block: 5px; }
+.motion-row button { width: 100%; min-width: 0; min-height: 40px; padding-inline: 8px; line-height: 1.25; overflow-wrap: break-word; hyphens: auto; }
 button { min-height: 34px; font: inherit; font-weight: 550; color: var(--blue-strong); background: var(--field); padding: 7px 11px; border: 0; border-radius: 10px; cursor: pointer; white-space: normal; }
 button:hover { background: var(--field-hover); }
 button:disabled { opacity: .5; cursor: default; }

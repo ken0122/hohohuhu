@@ -63,6 +63,14 @@ export async function createCharacterLibrary({ directory, onChange, onOpen, bind
   ipcMain.on("characters:dirty", (event, value) => { if (fromLibrary(event)) dirty = value === true; });
   return {
     source,
+    async cycle() {
+      const catalog = store.catalog();
+      const index = catalog.items.findIndex(item => item.id === catalog.selected);
+      const next = catalog.items[(index + 1) % catalog.items.length];
+      const value = await store.select(next.id);
+      onChange();
+      return value;
+    },
     get window() { return window; },
     show() {
       onOpen();

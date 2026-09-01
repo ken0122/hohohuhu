@@ -35,12 +35,14 @@ applyCharacterPresentation();
 characterHost.addEventListener("character-mounted", applyCharacterPresentation);
 window.addEventListener("pagehide", () => { setHint(); character.destroy(); }, { once: true });
 let mode = "dodge", chatOpen = false, near = false, pending = false, replyState = "prompt";
-let reactionTimer, hoverTimer, lastReaction = 0;
+let presentationLocale;
+let reactionTimer, reactionHintTimer, hoverTimer, lastReaction = 0;
 let moving = false, holdTimer, pressPoint, suppressClick = false;
 const gesture = createStrokeGesture({ getParts: () => character.definition.interactionParts || [] });
 let visible = false, hovering = false, idleTimer, idleFinish, idleHintTimer, idleCount = 0;
 let dragging = false;
 const IDLE_BUBBLE_HOLD_MS = 900;
+const INTERACTION_BUBBLE_HOLD_MS = 1100;
 const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 const hideEffect=await installHideEffect(pet,()=>{
   visible=false;drag.cancel();resetReaction();character.setActive(false);
@@ -99,6 +101,7 @@ function playReaction(selected) {
   if (!selected) return;
   stopIdle();
   clearTimeout(reactionTimer);
+  clearTimeout(reactionHintTimer);
   clearTimeout(hoverTimer);
   body.dataset.reaction = selected.kind;
   lastReaction = performance.now();
@@ -106,18 +109,22 @@ function playReaction(selected) {
   setHint(selected.message);
   if (selected.easterEgg) body.dataset.easterEgg = selected.easterEgg;
   reactionTimer = setTimeout(() => {
+    reactionTimer = undefined;
     delete body.dataset.reaction;
     delete body.dataset.easterEgg;
     character.react(null);
-    setHint();
-    scheduleIdle();
+    reactionHintTimer = setTimeout(() => {
+      reactionHintTimer = undefined;
+      setHint();
+      scheduleIdle();
+    }, INTERACTION_BUBBLE_HOLD_MS);
   }, selected.duration);
 }
 function react(intent) { playReaction(interaction.reaction(intent)); }
 function resetReaction() {
   stopIdle();
   clearTimeout(holdTimer); pressPoint = undefined; suppressClick = false;
-  clearTimeout(reactionTimer); clearTimeout(hoverTimer);
+  clearTimeout(reactionTimer); clearTimeout(reactionHintTimer); clearTimeout(hoverTimer);
   delete body.dataset.reaction;
   delete body.dataset.easterEgg;
   character.react(null);
@@ -241,6 +248,9 @@ pet.addEventListener("pointermove", event => {
 
 await installLocalization(() => {
   localizeDocument();
+  const nextLocale = document.documentElement.lang;
+  if (presentationLocale && presentationLocale !== nextLocale) resetReaction();
+  presentationLocale = nextLocale;
   document.title = appBrand();
   if (replyState === "prompt") reply.textContent = tr("petPrompt");
   if (replyState === "waiting") { status.textContent = tr("heard"); reply.textContent = tr("chatWaiting"); }

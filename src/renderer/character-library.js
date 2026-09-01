@@ -128,7 +128,7 @@ async function mount(entry) {
   $("#easter-egg").textContent = tr("qualityEgg", { name: easterEgg.label });
   $("#egg-preview").dataset.reaction = easterEgg.reaction.motion;
   $("#egg-preview").dataset.duration = String(easterEgg.reaction.duration);
-  $("#capabilities").textContent = entry.id === BLUE_ONE_EYE.id ? "原有下摆形变与眼睛动作。" : entry.id === BLACK_CAT.id ? "底部轮廓步态与轻跳；眼睛会跟随，尾巴保持静态。" : entry.id === SUNNY_YELLOW.id ? "底部轮廓步态与轻跳；珊瑚色眼睛会跟随，尾巴保持静态。" : entry.analysis ? `自适应步态；已识别 ${entry.analysis.parts.length} 个可修正互动部件。` : "整体起伏与轻跳；没有部件分析。";
+  $("#capabilities").textContent = entry.id === BLUE_ONE_EYE.id ? tr("capabilityBlue") : entry.id === BLACK_CAT.id ? tr("capabilityBlack") : entry.id === SUNNY_YELLOW.id ? tr("capabilitySunny") : entry.analysis ? tr("capabilityAnalyzed", { count: entry.analysis.parts.length }) : tr("capabilityGeneric");
 }
 async function showEntry(item) {
   const entry = await request(api.source(item.id));
@@ -237,11 +237,30 @@ $("#close").addEventListener("click", () => api.close());
 window.addEventListener("keydown", event => { if (event.key === "Escape") api.close(); });
 window.addEventListener("pagehide", () => { worker?.terminate(); clearTimeout(reactionTimer); characters.forEach(character => character.destroy()); clearOriginal(); }, { once: true });
 function relabelSelect(selector, mapping) { document.querySelectorAll(`${selector} option`).forEach(option => { option.textContent = tr(mapping[option.value] || option.value); }); }
+function renderSelectionLabels() {
+  if (!catalog) {
+    $("#name").textContent = tr("loadingCharacter");
+    $("#selection-status").textContent = tr("readingCharacter");
+    return;
+  }
+  const current = catalog.items.find(item => item.id === catalog.selected);
+  if (draft?.mode === "import") {
+    $("#name").textContent = tr("addNew");
+    $("#selection-status").textContent = tr("noOverwrite", { name: displayName(current) });
+  } else if (draft?.mode === "edit") {
+    $("#name").textContent = tr("editName", { name: selected.name });
+    $("#selection-status").textContent = selected.id === catalog.selected ? tr("editCurrent") : tr("editingCurrent", { name: displayName(current) });
+  } else if (selected) {
+    $("#name").textContent = displayName(selected);
+    $("#selection-status").textContent = selected.id === catalog.selected ? tr("currentCharacter") : tr("previewing", { name: displayName(current) });
+  }
+}
 function renderLocale() {
   localizeDocument(); document.title = tr("libraryTitle", { brand: appBrand() });
   relabelSelect("#persona-archetype", { shy:"shy", proud:"proud", cheerful:"cheerful", calm:"calm", curious:"curious", mischievous:"mischievous" });
   relabelSelect("#persona-voice", { soft:"soft", reserved:"reserved", bright:"bright", steady:"steady", curious:"curious", playful:"playful" });
   relabelSelect("#egg-trigger", INTERACTION_KEYS);
+  renderSelectionLabels();
   if (catalog) { controls(); renderCatalog(); }
   if (draft?.analysis) renderAnalysis(editedAnalysis());
   else if (previewEntry) mount(previewEntry).catch(error => status(error.message, true));

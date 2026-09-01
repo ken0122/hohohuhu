@@ -5,9 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { CATALOGS, SUPPORTED_LOCALES, brand, t, translationKeys } from "../src/i18n.js";
 import { createPreferencesStore, resolveSystemLocale } from "../src/preferences.js";
-import { localizedBuiltinProfile } from "../src/localized-profiles.js";
+import { localizedBuiltinProfile, localizedCustomProfile } from "../src/localized-profiles.js";
 import { BLACK_CAT_PROFILE, BLUE_ONE_EYE_PROFILE, SUNNY_YELLOW_PROFILE } from "../src/character-profile.js";
 import { chatSystemPrompt } from "../src/chat.js";
+import { characterDefinition } from "../src/characters.js";
 
 test("system language resolution distinguishes Chinese scripts and falls back to English", () => {
   assert.equal(resolveSystemLocale(["zh-Hant-HK", "en-US"]), "zh-TW");
@@ -48,6 +49,25 @@ test("built-in profiles localize without mutating the source profile", () => {
       assert.ok(profile.reactions.headpat.messages[0]);
     }
   assert.equal(BLUE_ONE_EYE_PROFILE.persona.identity, "住在桌面上的蓝色单眼小宠物");
+});
+
+test("custom character bubbles localize at runtime without mutating saved content", () => {
+  const source = structuredClone(BLUE_ONE_EYE_PROFILE);
+  source.persona.identity = "用户自己的角色";
+  source.reactions.hop.messages = ["用户写的原句"];
+  source.idle[0].messages = ["用户写的自言自语"];
+  const english = localizedCustomProfile(source, "en");
+  const japanese = localizedCustomProfile(source, "ja");
+  const runtime = characterDefinition("local-test", source, undefined, undefined, "de");
+  assert.equal(english.persona.identity, "用户自己的角色");
+  assert.equal(english.reactions.hop.messages[0], "I’m right here!");
+  assert.equal(english.idle[0].messages[0], "Looking around…");
+  assert.equal(japanese.reactions.hop.messages[0], "ここにいるよ！");
+  assert.equal(japanese.idle[0].messages[0], "きょろきょろ…");
+  assert.equal(runtime.profile.reactions.hop.messages[0], "Ich bin hier!");
+  assert.equal(runtime.profile.idle[0].messages[0], "Ich schaue mich um…");
+  assert.equal(source.reactions.hop.messages[0], "用户写的原句");
+  assert.equal(source.idle[0].messages[0], "用户写的自言自语");
 });
 
 test("chat constraints are emitted in the selected interface language", () => {

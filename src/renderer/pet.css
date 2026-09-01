@@ -1,5 +1,4 @@
 :root {
-  color-scheme: light dark;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
   --paper: var(--surface);
   --blue-dark: var(--blue-strong);
