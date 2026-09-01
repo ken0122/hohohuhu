@@ -8,6 +8,12 @@ const path = svg.match(/class="body" d="([^"]+)"/)[1];
 const sunnySvg = readFileSync(new URL("../assets/characters/sunny-yellow/character.svg",import.meta.url),"utf8");
 const sunnyBody = Array.from(sunnySvg.matchAll(/<path d="([^"]+)"/g), match => match[1])[2];
 
+test("sunny filled silhouette has no outer stroke", () => {
+  const filledPaths = Array.from(sunnySvg.matchAll(/<path\b[^>]*\bfill="(?!none)[^"]+"[^>]*>/g), match => match[0]);
+  assert.equal(filledPaths.length, 2);
+  assert.ok(filledPaths.every(element => !/\bstroke=/.test(element)));
+});
+
 test("shape animation keeps the original topology, head and bounds", () => {
   const original = cubicOutline(path);
   assert.equal(original[0].command,"M");
