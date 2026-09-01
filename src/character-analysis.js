@@ -10,6 +10,7 @@ const ISSUES = new Set([
 const PARTS = new Set(["body", "head", "eye", "mouth", "ear", "arm", "leg", "tail", "accessory"]);
 const ARCHETYPES = new Set(["shy", "proud", "cheerful", "calm", "curious", "mischievous"]);
 const VOICES = new Set(["soft", "reserved", "bright", "steady", "curious", "playful"]);
+const LOCALES = Object.freeze(["zh-CN", "zh-TW", "en", "ja", "fr", "de", "ru"]);
 
 function text(value, label, maximum) {
   if (typeof value !== "string" || !value.trim() || value.length > maximum || /[\x00-\x1f\x7f]/.test(value)) {
@@ -51,6 +52,19 @@ export function validateCharacterAnalysis(value) {
     if (!Array.isArray(messages) || messages.length < 1 || messages.length > 4) throw new Error(`模型没有返回有效的 ${intent} 互动语言。`);
     dialogue[intent] = Object.freeze(messages.map((message, index) => text(message, `${intent} 互动语言 ${index + 1}`, 50)));
   }
+  const sourceLocale = LOCALES.includes(value.sourceLocale) ? value.sourceLocale : "zh-CN";
+  const dialogueTranslations = {};
+  for (const locale of LOCALES) {
+    const translated = value.dialogueTranslations?.[locale];
+    if (!translated) continue;
+    dialogueTranslations[locale] = Object.freeze(Object.fromEntries(CHARACTER_INTENTS.map(intent => {
+      const messages = translated[intent];
+      if (!Array.isArray(messages) || messages.length < 1 || messages.length > 4)
+        throw new Error(`模型没有返回有效的 ${locale} ${intent} 翻译。`);
+      return [intent, Object.freeze(messages.map((message, index) => text(message, `${locale} ${intent} 翻译 ${index + 1}`, 50)))];
+    })));
+  }
+  if (!dialogueTranslations[sourceLocale]) dialogueTranslations[sourceLocale] = Object.freeze(dialogue);
   const suggestedEgg = value.easterEgg || {
     label: fallback.easterEgg.label,
     description: fallback.easterEgg.description,
@@ -73,6 +87,8 @@ export function validateCharacterAnalysis(value) {
       traits: Object.freeze(persona.traits.map((trait, index) => text(trait, `性格特点 ${index + 1}`, 12))),
     }),
     dialogue: Object.freeze(dialogue),
+    sourceLocale,
+    dialogueTranslations: Object.freeze(dialogueTranslations),
     easterEgg: Object.freeze({
       label: text(suggestedEgg.label, "彩蛋名称", 24),
       description: text(suggestedEgg.description, "彩蛋说明", 80),
@@ -95,7 +111,7 @@ const ANALYSIS_PROMPT = `分析这张桌面宠物角色图片。只返回一个 
 图片要求：只有一个完整角色，不能裁切；透明或纯色简洁背景；正面或轻微侧面；眼睛、头、身体和附肢边界清楚。
 quality.decision 只能是 pass、warn、reject。quality.issues 只能使用 multiple-subjects、cropped、busy-background、low-resolution、occluded、not-character、unclear-parts、side-view。
 persona.archetype 只能是 shy、proud、cheerful、calm、curious、mischievous；persona.voice 只能是 soft、reserved、bright、steady、curious、playful。
-dialogue 必须包含 headpat、tickle、poke、cuddle、nuzzle、hop、shy，每项给 2 句符合角色气质的目标语言短句，每句不超过 50 个字符。
+dialogue 必须包含 headpat、tickle、poke、cuddle、nuzzle、hop、shy，每项给 2 句符合角色气质的目标语言短句，每句不超过 50 个字符。sourceLocale 使用目标语言代码。dialogueTranslations 必须包含 zh-CN、zh-TW、en、ja、fr、de、ru 七组完整台词；翻译要保留 persona 的性格与说话方式，不要逐字硬译。
 easterEgg 给这个角色设计一个专属彩蛋：triggerIntent 只能使用上述七个互动名；名称、说明和触发后的短句必须符合角色形象，不得依赖声音或图片中不可动的部件。
 parts 必须列出所有能确认的 body、head、eye、mouth、ear、arm、leg、tail、accessory。每只清晰可见的眼睛尽量单独给一个 eye 框，不要把整张脸当成 eye；无法可靠分开时才给一个覆盖双眼的框。box 是相对整张图片的 [x,y,width,height]，每个数 0 到 1；confidence 也是 0 到 1。
 JSON 结构：{"quality":{"decision":"pass","issues":[],"explanation":""},"persona":{"archetype":"curious","voice":"curious","identity":"","summary":"","traits":[""]},"dialogue":{"headpat":["",""] ,"tickle":["",""] ,"poke":["",""] ,"cuddle":["",""] ,"nuzzle":["",""] ,"hop":["",""] ,"shy":["",""]},"easterEgg":{"label":"","description":"","triggerIntent":"headpat","message":""},"parts":[{"kind":"body","confidence":0.9,"box":[0.1,0.1,0.8,0.8]}]}`;
@@ -111,7 +127,7 @@ export async function analyzeCharacterImage({ bytes, mime }, { provider = loadCh
       method: "POST", redirect: "error", signal: AbortSignal.timeout(30000),
       headers: { "content-type": "application/json", "x-api-key": key, "authorization": `Bearer ${key}`, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
-        model: visionModel || model, max_tokens: 1400,
+        model: visionModel || model, max_tokens: 3600,
         messages: [{ role: "user", content: [
           { type: "text", text: ANALYSIS_PROMPT + `\n所有面向用户的文字字段必须使用${ANALYSIS_LANGUAGE[locale] || ANALYSIS_LANGUAGE.en}。` },
           { type: "image", source: { type: "base64", media_type: info.mime, data: Buffer.from(source).toString("base64") } },
@@ -126,7 +142,7 @@ export async function analyzeCharacterImage({ bytes, mime }, { provider = loadCh
     }
     const data = await response.json();
     const reply = (data.content || []).filter(block => block.type === "text").map(block => block.text).join("");
-    return validateCharacterAnalysis(jsonFromReply(reply));
+    return validateCharacterAnalysis({ ...jsonFromReply(reply), sourceLocale: locale });
   } catch (error) {
     if (error.name === "TimeoutError" || error.name === "AbortError") throw new Error("角色分析超过 30 秒，请重试。 ");
     if (error instanceof TypeError) throw new Error("暂时连不上接口，无法分析角色图片。");

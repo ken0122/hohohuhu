@@ -51,16 +51,19 @@ test("built-in profiles localize without mutating the source profile", () => {
   assert.equal(BLUE_ONE_EYE_PROFILE.persona.identity, "住在桌面上的蓝色单眼小宠物");
 });
 
-test("custom character bubbles localize at runtime without mutating saved content", () => {
+test("custom character bubbles use authored and translated dialogue without mutating saved content", () => {
   const source = structuredClone(BLUE_ONE_EYE_PROFILE);
   source.persona.identity = "用户自己的角色";
   source.reactions.hop.messages = ["用户写的原句"];
   source.idle[0].messages = ["用户写的自言自语"];
-  const english = localizedCustomProfile(source, "en");
+  const analysis = { sourceLocale: "zh-CN", dialogueTranslations: { en: { headpat:["Pat pat"],tickle:["Tickles"],poke:["No poking"],cuddle:["Cuddle"],nuzzle:["Snuggle"],hop:["Custom hello"],shy:["A little shy"] } } };
+  const chinese = localizedCustomProfile(source, "zh-CN", analysis);
+  const english = localizedCustomProfile(source, "en", analysis);
   const japanese = localizedCustomProfile(source, "ja");
   const runtime = characterDefinition("local-test", source, undefined, undefined, "de");
   assert.equal(english.persona.identity, "用户自己的角色");
-  assert.equal(english.reactions.hop.messages[0], "I’m right here!");
+  assert.equal(chinese.reactions.hop.messages[0], "用户写的原句");
+  assert.equal(english.reactions.hop.messages[0], "Custom hello");
   assert.equal(english.idle[0].messages[0], "Looking around…");
   assert.equal(japanese.reactions.hop.messages[0], "ここにいるよ！");
   assert.equal(japanese.idle[0].messages[0], "きょろきょろ…");

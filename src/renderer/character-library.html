@@ -20,10 +20,15 @@
         <figure id="original" hidden><span id="original-slot"></span><figcaption data-i18n="original">原图</figcaption></figure>
         <figure><div id="large" class="character-host"></div><figcaption id="art-caption" hidden data-i18n="processed">处理后</figcaption></figure>
       </div>
+      <div class="profile-summary" aria-label="角色气质与彩蛋" data-i18n-aria-label="personalityEgg"><p id="personality"></p><p id="easter-egg"></p></div>
+      <div class="preview-tools">
+        <div class="sizes" aria-label="实际尺寸" data-i18n-aria-label="actualSizes"><div><div id="desktop" class="character-host"></div><span data-i18n="desktop">桌面</span></div><div><div id="game" class="character-host"></div><span data-i18n="game">游戏</span></div><p id="capabilities" class="visually-hidden">形象与动作独立控制。</p></div>
+        <fieldset id="motions" disabled><legend data-i18n="motions">动作</legend><div class="motion-row"><div class="gait-group" role="group" aria-label="步态" data-i18n-aria-label="gait"><button data-gait="idle" aria-pressed="true" data-i18n="idle">静止</button><button data-gait="walk" aria-pressed="false" data-i18n="walk">行走</button><button data-gait="run" aria-pressed="false" data-i18n="run">奔跑</button></div><div class="motion-secondary"><button data-reaction="hop" data-i18n="hop">轻跳</button><button id="egg-preview" data-i18n="easterEgg">彩蛋</button><button id="pause" aria-pressed="false" data-i18n="pausePreview">暂停预览</button></div></div></fieldset>
+      </div>
       <div id="draft-fields" hidden>
         <label for="character-name" data-i18n="characterName">角色名称</label><input id="character-name" maxlength="40" autocomplete="off" />
         <section id="analysis-editor" aria-label="修正角色分析" data-i18n-aria-label="fixAnalysis">
-          <div class="analysis-heading"><strong id="quality-label"></strong><span id="quality-explanation"></span></div>
+          <div class="analysis-heading" hidden><strong id="quality-label"></strong><span id="quality-explanation"></span></div>
           <div class="analysis-grid">
             <label><span data-i18n="identity">角色身份</span><input id="persona-identity" maxlength="40" /></label>
             <label><span data-i18n="archetype">性格类型</span><select id="persona-archetype"><option value="shy">害羞</option><option value="proud">傲娇</option><option value="cheerful">开朗</option><option value="calm">沉稳</option><option value="curious">好奇</option><option value="mischievous">调皮</option></select></label>
@@ -43,11 +48,6 @@
           <div id="parts-list"></div>
           <p data-i18n="coordinates">坐标范围为 0–1。</p>
         </section>
-      </div>
-      <div class="profile-summary" aria-label="角色气质与彩蛋" data-i18n-aria-label="personalityEgg"><p id="personality"></p><p id="easter-egg"></p></div>
-      <div class="preview-tools">
-        <div class="sizes" aria-label="实际尺寸" data-i18n-aria-label="actualSizes"><div><div id="desktop" class="character-host"></div><span data-i18n="desktop">桌面</span></div><div><div id="game" class="character-host"></div><span data-i18n="game">游戏</span></div><p id="capabilities" class="visually-hidden">形象与动作独立控制。</p></div>
-        <fieldset id="motions" disabled><legend data-i18n="motions">动作</legend><div class="motion-row"><div class="gait-group" role="group" aria-label="步态" data-i18n-aria-label="gait"><button data-gait="idle" aria-pressed="true" data-i18n="idle">静止</button><button data-gait="walk" aria-pressed="false" data-i18n="walk">行走</button><button data-gait="run" aria-pressed="false" data-i18n="run">奔跑</button></div><div class="motion-secondary"><button data-reaction="hop" data-i18n="hop">轻跳</button><button id="egg-preview" data-i18n="easterEgg">彩蛋</button><button id="pause" aria-pressed="false" data-i18n="pausePreview">暂停预览</button></div></div></fieldset>
       </div>
       <p id="motion-status" class="visually-hidden" aria-live="polite"></p>
       <div class="detail-meta"><p id="status" role="status" aria-live="polite"></p><div class="manage-actions"><button id="edit" hidden data-i18n="edit">编辑</button><button id="remove" class="danger" hidden data-i18n="remove">删除…</button></div></div>

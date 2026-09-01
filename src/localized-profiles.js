@@ -61,10 +61,15 @@ export function localizedBuiltinProfile(id, base, locale) {
   });
 }
 
-export function localizedCustomProfile(base, locale) {
+export function localizedCustomProfile(base, locale, analysis) {
   const common = COMMON[locale];
   if (!common) return validateCharacterProfile(base);
-  const reactions = Object.fromEntries(INTENTS.map((intent, index) => [intent, { ...base.reactions[intent], messages: [common.reactions[index]] }]));
+  const translated = analysis?.dialogueTranslations?.[locale];
+  const sourceMatches = analysis?.sourceLocale === locale;
+  const reactions = Object.fromEntries(INTENTS.map((intent, index) => [intent, {
+    ...base.reactions[intent],
+    messages: translated?.[intent] || (sourceMatches ? base.reactions[intent].messages : [common.reactions[index]]),
+  }]));
   return validateCharacterProfile({
     ...base,
     reactions,

@@ -152,7 +152,7 @@ export function characterDefinition(id, profile, analysis, detectedEyeRig, local
     parts: Object.freeze({ root: null, pupil: ".imported-pupils" }),
     gaze: rig.gaze,
     overlays: rig.overlays,
-    profile: locale ? localizedCustomProfile(customProfile, locale) : customProfile,
+    profile: locale ? localizedCustomProfile(customProfile, locale, analysis) : customProfile,
     interactionParts: analysis?.parts || Object.freeze([]),
   };
 }

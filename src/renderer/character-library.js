@@ -73,6 +73,7 @@ function partRow(part = { kind: "accessory", confidence: 1, box: [.25,.25,.5,.5]
 function renderAnalysis(analysis) {
   const labels = { pass: tr("materialPass"), warn: tr("materialWarn"), reject: tr("materialReject") };
   $(".analysis-heading").dataset.decision = analysis.quality.decision;
+  $(".analysis-heading").hidden = analysis.quality.decision === "pass";
   $("#quality-label").textContent = labels[analysis.quality.decision];
   $("#quality-explanation").textContent = analysis.quality.explanation;
   $("#persona-identity").value = analysis.persona.identity;
@@ -101,6 +102,8 @@ function editedAnalysis() {
     input.dataset.dialogue,
     input.value.split(/[｜|]/).map(value => value.trim()).filter(Boolean),
   ]));
+  const nextDialogueTranslations = { ...(draft.analysis.dialogueTranslations || {}) };
+  nextDialogueTranslations[document.documentElement.lang] = dialogue;
   return {
     ...draft.analysis,
     persona: {
@@ -111,6 +114,8 @@ function editedAnalysis() {
       traits,
     },
     dialogue,
+    sourceLocale: draft.analysis.sourceLocale || document.documentElement.lang,
+    dialogueTranslations: nextDialogueTranslations,
     easterEgg: { label: $("#egg-label").value, triggerIntent: $("#egg-trigger").value, description: $("#egg-description").value, message: $("#egg-message").value },
     parts,
   };
@@ -189,7 +194,7 @@ $("#apply").addEventListener("click", () => operation(async () => {
   await showEntry(catalog.items.find(item => item.id === (mode === "edit" ? targetId : catalog.selected)));
   characters.forEach(character => character.react("hop"));
   reactionTimer = setTimeout(() => characters.forEach(character => character.react(null)), 800);
-  status(tr(mode === "edit" ? "changesSaved" : mode === "import" ? "characterAdded" : "characterChanged"));
+  status(mode === "edit" ? "" : tr(mode === "import" ? "characterAdded" : "characterChanged"));
 }));
 $("#cancel").addEventListener("click", () => operation(async () => {
   const targetId = draft?.mode === "edit" ? draft.id : catalog.selected;
@@ -206,7 +211,7 @@ $("#edit").addEventListener("click", () => operation(async () => {
   $("#draft-fields").hidden = false;
   renderAnalysis(previewEntry.analysis);
   api.setDirty(true); renderCatalog();
-  status(tr("editHint"));
+  status("");
 }));
 $("#remove").addEventListener("click", () => operation(async () => {
   if (!confirm(tr("deleteConfirm", { name: selected.name, brand: appBrand() }))) return;
