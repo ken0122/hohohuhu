@@ -56,7 +56,7 @@ test("state transitions preserve manual hiding and restrict control to visible P
     assert.equal(original.manualHidden, false, "transitions do not mutate their input");
     const chat = transitionState(hidden, { type: "chat" });
     assert.equal(chat.manualHidden, false);
-    assert.equal(chat.mode, mode === MODES.PACMAN ? MODES.PET : mode);
+    assert.equal(chat.mode, mode === MODES.BEANS ? MODES.PET : mode);
     assert.equal(transitionState(chat, { type: "focus" }).controlActive, false);
     const dismissed = transitionState(chat, { type: "dismiss-chat" });
     assert.equal(
@@ -124,7 +124,7 @@ test("Dodge stays visible unless manually hidden", () => {
     assert.equal(petShouldShow({ mode, manualHidden: false }), true);
     assert.equal(petShouldShow({ mode, manualHidden: true }), false);
   }
-  assert.equal(petShouldShow({ mode: MODES.PACMAN, manualHidden: false }), false);
+  assert.equal(petShouldShow({ mode: MODES.BEANS, manualHidden: false }), false);
 });
 test("Pet avoids only while idle and outside the interaction surface", () => {
   assert.equal(petShouldAvoid({ mode: MODES.PET, chatOpen: false, manualControl: false, hovered: false }), true);
@@ -151,14 +151,14 @@ test("recovery clamps detached/negative displays and tiny work areas", () => {
   assert.equal(fitPet({ x: 40.3, y: 50.7 }, { x: 0, y: 0, width: 1000, height: 800 }).x, 40.3);
 });
 test("there are three modes and legacy control resolves to Pet", () => {
-  assert.deepEqual(Object.values(MODES), ["dodge", "pet", "pacman"]);
+  assert.deepEqual(Object.values(MODES), ["dodge", "pet", "beans"]);
   assert.equal(normalizeMode("control"), "pet");
 });
-test("the mode shortcut cycles Dodge, Pet and Pac-Man in order", () => {
+test("the mode shortcut cycles Dodge, Pet and Eat Beans in order", () => {
   assert.equal(nextMode("dodge"), "pet");
-  assert.equal(nextMode("pet"), "pacman");
-  assert.equal(nextMode("pacman"), "dodge");
-  assert.equal(nextMode("control"), "pacman");
+  assert.equal(nextMode("pet"), "beans");
+  assert.equal(nextMode("beans"), "dodge");
+  assert.equal(nextMode("control"), "beans");
 });
 
 test("chat replies are capped by Unicode characters", () => {

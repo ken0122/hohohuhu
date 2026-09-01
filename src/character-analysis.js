@@ -1,4 +1,4 @@
-import { CHARACTER_VISION_MODEL, loadChatProvider } from "./chat-provider.js";
+import { loadChatProvider } from "./chat-provider.js";
 import { inspectCharacterImage } from "./character-import.js";
 import { CHARACTER_INTENTS, profileFromPersona } from "./character-profile.js";
 
@@ -105,13 +105,13 @@ export async function analyzeCharacterImage({ bytes, mime }, { provider = loadCh
   const source = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
   const info = inspectCharacterImage(source);
   if (mime !== info.mime) throw new Error("图片类型与文件内容不一致。");
-  const { url, key } = await provider();
+  const { url, key, model, visionModel } = await provider();
   try {
     const response = await request(url, {
       method: "POST", redirect: "error", signal: AbortSignal.timeout(30000),
-      headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+      headers: { "content-type": "application/json", "x-api-key": key, "authorization": `Bearer ${key}`, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
-        model: CHARACTER_VISION_MODEL, max_tokens: 1400, thinking: { type: "disabled" }, output_config: { effort: "low" },
+        model: visionModel || model, max_tokens: 1400,
         messages: [{ role: "user", content: [
           { type: "text", text: ANALYSIS_PROMPT + `\n所有面向用户的文字字段必须使用${ANALYSIS_LANGUAGE[locale] || ANALYSIS_LANGUAGE.en}。` },
           { type: "image", source: { type: "base64", media_type: info.mime, data: Buffer.from(source).toString("base64") } },
@@ -120,17 +120,17 @@ export async function analyzeCharacterImage({ bytes, mime }, { provider = loadCh
     });
     if (!response.ok) {
       await response.body?.cancel();
-      if (response.status === 401 || response.status === 403) throw new Error("DeepSeek 凭证暂不可用，无法分析角色图片。");
+      if (response.status === 401 || response.status === 403) throw new Error("API 凭证暂不可用，无法分析角色图片。");
       if (response.status === 429) throw new Error("角色分析请求较多，请稍后再试。");
-      throw new Error("DeepSeek 暂时无法分析这张图片，请稍后再试。");
+      throw new Error("接口暂时无法分析这张图片，请稍后再试。");
     }
     const data = await response.json();
     const reply = (data.content || []).filter(block => block.type === "text").map(block => block.text).join("");
     return validateCharacterAnalysis(jsonFromReply(reply));
   } catch (error) {
     if (error.name === "TimeoutError" || error.name === "AbortError") throw new Error("角色分析超过 30 秒，请重试。 ");
-    if (error instanceof TypeError) throw new Error("暂时连不上 DeepSeek，无法分析角色图片。");
-    if (error instanceof SyntaxError) throw new Error("DeepSeek 的角色分析暂时无法读取，请重试。");
+    if (error instanceof TypeError) throw new Error("暂时连不上接口，无法分析角色图片。");
+    if (error instanceof SyntaxError) throw new Error("接口返回的角色分析暂时无法读取，请重试。");
     throw error;
   }
 }

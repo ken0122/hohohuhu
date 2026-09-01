@@ -46,7 +46,7 @@ try {
 
   const [packed] = JSON.parse(run("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", output], true));
   // Keep npm payload explicit; never ship local outputs, configs or dependencies.
-  const allowed = /^(?:bin\/|src\/|assets\/|scripts\/|AGENTS\.md$|LICENSE$|README\.md$|package\.json$)/;
+  const allowed = /^(?:bin\/|src\/|assets\/|scripts\/|AGENTS\.md$|ASSETS-LICENSE\.md$|LICENSE$|README\.md$|package\.json$)/;
   for (const { path: entry } of packed.files) {
     if (!allowed.test(entry) || /(?:^|\/)(?:\.env(?:\..*)?|\.claude|\.cc-switch)(?:\/|$)/.test(entry)) {
       throw new Error(`Unexpected npm payload entry: ${entry}`);
@@ -58,7 +58,7 @@ try {
   }
   run("hdiutil", ["verify", path.join(output, names.find(name => name.endsWith(".dmg")))]);
   run("unzip", ["-tq", path.join(output, names.find(name => name.endsWith(".zip")))]);
-  for (const name of ["README.md", "AGENTS.md", "LICENSE"]) {
+  for (const name of ["README.md", "AGENTS.md", "LICENSE", "ASSETS-LICENSE.md"]) {
     await copyFile(path.join(root, name), path.join(output, name));
   }
   await mkdir(path.join(output, "assets"));
@@ -74,7 +74,7 @@ try {
     `## 安装\n\nDMG / ZIP：将 呼噜呼噜.app 放进 Applications 后打开。\n` +
     `CLI（Node.js 22.12+）：\n\n\`\`\`bash\nnpm install -g ./${packed.filename}\nbluepet\n\`\`\`\n\n` +
     `在本目录执行 \`shasum -a 256 -c SHA256SUMS\` 校验三个安装包。\n\n` +
-    `功能与使用说明见同目录 README.md；AGENTS.md 为项目协作指南。\n` +
+    `功能与使用说明见同目录 README.md；AGENTS.md 为项目协作指南；ASSETS-LICENSE.md 说明角色与视觉素材权利边界。\n` +
     `公开发布需要另外授权 tag 与上传；本次目录包含未签名本地构建。\n`);
   console.log(`Release ready: ${output}`);
 } catch (error) {

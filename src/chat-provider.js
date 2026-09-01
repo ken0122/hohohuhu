@@ -1,36 +1,52 @@
-import { readFile } from "node:fs/promises";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import os from "node:os";
-import path from "node:path";
-const exec=promisify(execFile);
-export const CHAT_MODEL="deepseek-v4-flash";
-export const CHARACTER_VISION_MODEL="deepseek-v4-flash-vision-exp";
-
-export function deepseekCredentials(env={}) {
-  // Never mix a provider's key with another provider's URL.
-  let url;
-  try {url=new URL(env.ANTHROPIC_BASE_URL);} catch {return;}
-  if(url.protocol!=="https:"||url.host!=="api.deepseek.com"||url.username||url.password)return;
-  const key=env.ANTHROPIC_AUTH_TOKEN||env.ANTHROPIC_API_KEY;
-  if(typeof key!=="string"||!key.trim())return;
-  return {url:"https://api.deepseek.com/anthropic/v1/messages",key};
+function bounded(value, maximum) {
+  return typeof value === "string" && value.trim() && value.length <= maximum && !/[\x00-\x1f\x7f]/.test(value)
+    ? value.trim()
+    : undefined;
 }
 
-export async function loadChatProvider({env=process.env,home=os.homedir()}={}) {
-  const explicit=deepseekCredentials(env);
-  if(explicit)return explicit;
-  // Read only the selected Claude provider; never log or copy credentials.
-  try {
-    const {stdout}=await exec("sqlite3",["-readonly",path.join(home,".cc-switch/cc-switch.db"),
-      "SELECT settings_config FROM providers WHERE app_type='claude' AND is_current=1 LIMIT 1;"],{timeout:2000,maxBuffer:262144});
-    const selected=deepseekCredentials(JSON.parse(stdout).env);
-    if(selected)return selected;
-  } catch { /* CC Switch is optional. */ }
-  try {
-    const settings=JSON.parse(await readFile(path.join(env.CLAUDE_CONFIG_DIR||path.join(home,".claude"),"settings.json"),"utf8"));
-    const configured=deepseekCredentials(settings.env);
-    if(configured)return configured;
-  } catch { /* Report a safe message, never raw credential data. */ }
-  throw new Error("请在 Claude Code 或 CC Switch 中配置并选择 DeepSeek，再和我聊天。");
+export function messagesUrl(baseUrl) {
+  const value = bounded(baseUrl, 2048);
+  if (!value) throw new Error("请输入有效的 Base URL。");
+  let url;
+  try { url = new URL(value); } catch { throw new Error("Base URL 格式不正确。"); }
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+    throw new Error("Base URL 必须是无账号、查询参数或片段的 HTTPS 地址。");
+  }
+  url.pathname = url.pathname.replace(/\/+$/, "");
+  if (!url.pathname.endsWith("/v1/messages")) url.pathname += "/v1/messages";
+  return url.toString();
+}
+
+export function providerSettings(value, previous) {
+  if (!value || typeof value !== "object") throw new Error("请输入有效的 API 设置。");
+  const baseUrl = bounded(value.baseUrl, 2048);
+  const model = bounded(value.model, 200);
+  const visionModel = bounded(value.visionModel, 200) || model;
+  const key = bounded(value.apiKey, 4096) || previous?.key;
+  messagesUrl(baseUrl);
+  if (!key || /\s/.test(key)) throw new Error("请输入有效的 API Key；不能包含空白字符。");
+  if (!model) throw new Error("请输入对话模型标识。");
+  return { baseUrl, key, model, visionModel };
+}
+
+export function providerFromEnvironment(env = process.env) {
+  if (!env.BLUEPET_API_BASE_URL || !env.BLUEPET_API_KEY || !env.BLUEPET_CHAT_MODEL) return;
+  return providerSettings({
+    baseUrl: env.BLUEPET_API_BASE_URL,
+    apiKey: env.BLUEPET_API_KEY,
+    model: env.BLUEPET_CHAT_MODEL,
+    visionModel: env.BLUEPET_VISION_MODEL,
+  });
+}
+
+export function providerRequest(value) {
+  if (!value) return;
+  const settings = providerSettings({ ...value, apiKey: value.key });
+  return { ...settings, url: messagesUrl(settings.baseUrl) };
+}
+
+export async function loadChatProvider({ env = process.env } = {}) {
+  const configured = providerFromEnvironment(env);
+  if (configured) return providerRequest(configured);
+  throw new Error("请先在聊天设置中配置兼容接口，或设置 BLUEPET_API_BASE_URL、BLUEPET_API_KEY 和 BLUEPET_CHAT_MODEL。");
 }

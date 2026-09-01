@@ -7,9 +7,9 @@ test("desktop release selection keeps every check unless an explicit filter narr
   assert.equal(all.suite, "release");
   assert.equal(all.matches("any check", ["pet"]), true);
 
-  const filtered = createDesktopTestSelection({ BLUEPET_TEST_MATCH: "Pac-Man" });
+  const filtered = createDesktopTestSelection({ BLUEPET_TEST_MATCH: "Eat Beans" });
   assert.equal(filtered.matches("Pet keyboard", ["focus", "pet"]), false);
-  assert.equal(filtered.matches("Pac-Man starts", ["smoke", "pacman"]), true);
+  assert.equal(filtered.matches("Eat Beans starts", ["smoke", "beans"]), true);
 });
 
 test("desktop suites and feature tags compose without broadening the selection", () => {

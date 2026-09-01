@@ -1,5 +1,5 @@
 import { cleanClaudeReply } from "./core.js";
-import { CHAT_MODEL, loadChatProvider } from "./chat-provider.js";
+import { loadChatProvider } from "./chat-provider.js";
 import { BLUE_ONE_EYE_PROFILE } from "./character-profile.js";
 
 const VOICE = Object.freeze({
@@ -28,20 +28,20 @@ export function chatSystemPrompt(persona = BLUE_ONE_EYE_PROFILE.persona, { local
 export async function askClaude(prompt,{provider=loadChatProvider,request=fetch,persona=BLUE_ONE_EYE_PROFILE.persona,locale="zh-CN"}={}) {
   const safePrompt=String(prompt).trim().slice(0,500);
   if(!safePrompt)throw new Error("悄悄说点什么吧。");
-  const {url,key}=await provider();
+  const {url,key,model}=await provider();
   try {
     // No CLI startup, tool discovery or agent loop for a one-sentence reply.
     const response=await request(url,{
       method:"POST",redirect:"error",signal:AbortSignal.timeout(15000),
-      headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01"},
-      body:JSON.stringify({model:CHAT_MODEL,max_tokens:160,thinking:{type:"disabled"},output_config:{effort:"low"},
+      headers:{"content-type":"application/json","x-api-key":key,"authorization":`Bearer ${key}`,"anthropic-version":"2023-06-01"},
+      body:JSON.stringify({model,max_tokens:160,
         system:chatSystemPrompt(persona,{locale}),messages:[{role:"user",content:safePrompt}]}),
     });
     if(!response.ok) {
       await response.body?.cancel();
-      if(response.status===401||response.status===403)throw new Error("DeepSeek 凭证暂不可用，请检查本机 provider 配置。");
+      if(response.status===401||response.status===403)throw new Error("API 凭证暂不可用，请检查本机接口配置。");
       if(response.status===429)throw new Error("聊得有点快啦，稍等一下再试好吗？");
-      throw new Error("DeepSeek 暂时没回应，请稍后再试。");
+      throw new Error("接口暂时没回应，请稍后再试。");
     }
     const data=await response.json();
     const reply=cleanClaudeReply((data.content||[]).filter(block=>block.type==="text").map(block=>block.text).join(""));
@@ -49,8 +49,8 @@ export async function askClaude(prompt,{provider=loadChatProvider,request=fetch,
     return reply;
   } catch(error) {
     if(error.name==="TimeoutError"||error.name==="AbortError")throw new Error("刚刚没听清，再问一次好吗？");
-    if(error instanceof TypeError)throw new Error("暂时连不上 DeepSeek，请检查网络后再试。");
-    if(error instanceof SyntaxError)throw new Error("DeepSeek 的回复暂时没接住，请再试一次。");
+    if(error instanceof TypeError)throw new Error("暂时连不上接口，请检查网络和 Base URL 后再试。");
+    if(error instanceof SyntaxError)throw new Error("接口回复暂时无法读取，请再试一次。");
     throw error;
   }
 }

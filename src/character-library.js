@@ -24,6 +24,16 @@ export async function createCharacterLibrary({ directory, onChange, onOpen, bind
     choosing = true;
     const owner = window;
     try {
+      const rights = await dialog.showMessageBox(owner, {
+        type: "warning",
+        title: t(locale(), "imageRightsTitle"),
+        message: t(locale(), "imageRightsMessage"),
+        detail: t(locale(), "imageRightsDetail"),
+        buttons: [t(locale(), "imageRightsConfirm"), t(locale(), "cancel")],
+        defaultId: 1,
+        cancelId: 1,
+      });
+      if (rights.response !== 0 || owner.isDestroyed()) return null;
       const result = await dialog.showOpenDialog(owner, {
         title: t(locale(), "chooseImageTitle"),
         message: t(locale(), "chooseImageMessage"),

@@ -1,18 +1,10 @@
 import { readFileSync, writeFileSync, renameSync, unlinkSync, mkdirSync } from "node:fs";
 import path from "node:path";
-import { deepseekCredentials } from "./chat-provider.js";
+import { providerRequest, providerSettings } from "./chat-provider.js";
 
-export const DEFAULT_BASE_URL = "https://api.deepseek.com/anthropic";
+const EMPTY_STATUS = Object.freeze({ configured: false, baseUrl: "", model: "", visionModel: "" });
 export function validateApiSettings(value, previous) {
-  if (!value || typeof value.baseUrl !== "string" || typeof value.apiKey !== "string" || value.baseUrl.length > 256 || value.apiKey.length > 4096)
-    throw new Error("请输入有效的 Base URL 和 API Key。");
-  let url;
-  try { url = new URL(value.baseUrl.trim()); } catch { throw new Error("Base URL 格式不正确。"); }
-  if (url.protocol !== "https:" || url.host !== "api.deepseek.com" || url.username || url.password || url.search || url.hash || !["/", "/anthropic", "/anthropic/"].includes(url.pathname))
-    throw new Error("只支持 DeepSeek 官方地址：https://api.deepseek.com（可带 /anthropic）。");
-  const key = value.apiKey.trim() || previous?.key;
-  if (!key || /[\s\x00-\x1f\x7f]/.test(key)) throw new Error("请输入有效的 API Key；不能包含空白字符。");
-  return { baseUrl: DEFAULT_BASE_URL, key };
+  return providerSettings(value, previous);
 }
 
 // Only ciphertext is stored in app userData, never in the repository or a database.
@@ -27,12 +19,15 @@ export function createApiSettingsStore({ directory, secureStorage }) {
     available();
     try {
       const data = JSON.parse(secureStorage.decryptString(encrypted));
-      return validateApiSettings({ baseUrl: data.baseUrl, apiKey: data.key });
-    } catch { throw new Error("无法解密 API 设置，请清除后重新配置。"); }
+      return validateApiSettings({ baseUrl: data.baseUrl, apiKey: data.key, model: data.model, visionModel: data.visionModel });
+    } catch { throw new Error("无法解密或迁移 API 设置，请清除后重新配置。"); }
+  }
+  function statusOf(saved) {
+    return saved ? { configured: true, baseUrl: saved.baseUrl, model: saved.model, visionModel: saved.visionModel } : { ...EMPTY_STATUS };
   }
   return {
-    status() { const saved = read(); return { configured: Boolean(saved), baseUrl: saved?.baseUrl || DEFAULT_BASE_URL }; },
-    provider() { const saved = read(); return saved && deepseekCredentials({ ANTHROPIC_BASE_URL: saved.baseUrl, ANTHROPIC_API_KEY: saved.key }); },
+    status() { return statusOf(read()); },
+    provider() { return providerRequest(read()); },
     save(value) {
       const previous = value?.apiKey === "" ? read() : undefined;
       const saved = validateApiSettings(value, previous);
@@ -42,11 +37,11 @@ export function createApiSettingsStore({ directory, secureStorage }) {
         writeFileSync(file + ".tmp", secureStorage.encryptString(JSON.stringify(saved)), { mode: 0o600 });
         renameSync(file + ".tmp", file);
       } catch { throw new Error("保存失败，请检查应用数据目录权限后重试。"); }
-      return this.status();
+      return statusOf(saved);
     },
     clear() {
       try { unlinkSync(file); } catch (error) { if (error.code !== "ENOENT") throw new Error("清除失败，请稍后重试。"); }
-      return { configured: false, baseUrl: DEFAULT_BASE_URL };
+      return { ...EMPTY_STATUS };
     },
   };
 }

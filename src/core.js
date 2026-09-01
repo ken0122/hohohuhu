@@ -1,7 +1,7 @@
 export const MODES = Object.freeze({
   DODGE: "dodge",
   PET: "pet",
-  PACMAN: "pacman",
+  BEANS: "beans",
 });
 export const PET_FRAME_SIZE = 132;
 export const PET_SPRITE_SIZE = 84;
@@ -51,7 +51,7 @@ export function editingAction(input, platform) {
   }[input.key.toLowerCase()];
 }
 export function nextMode(mode) {
-  const order = [MODES.DODGE, MODES.PET, MODES.PACMAN];
+  const order = [MODES.DODGE, MODES.PET, MODES.BEANS];
   return order[(order.indexOf(normalizeMode(mode)) + 1) % order.length];
 }
 
@@ -136,7 +136,7 @@ export function controlVelocity(keys, speed = 300) {
 }
 
 export function petShouldShow({ mode, manualHidden }) {
-  return !manualHidden && mode !== MODES.PACMAN;
+  return !manualHidden && mode !== MODES.BEANS;
 }
 
 export function petShouldAvoid({ mode, chatOpen, manualControl, hovered }) {

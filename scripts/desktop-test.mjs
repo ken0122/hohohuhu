@@ -106,7 +106,7 @@ try {
     assert.equal(await settings.webContents.executeJavaScript("document.documentElement.dataset.theme"), "dark");
     assert.equal(await settings.webContents.executeJavaScript("getComputedStyle(document.documentElement).backgroundColor"), "rgb(17, 24, 43)");
     assert.equal(await settings.webContents.executeJavaScript("document.querySelector('h1').textContent"), "Chat-Einstellungen");
-    assert.match(await settings.webContents.executeJavaScript("document.querySelector('.intro').textContent"), /DeepSeek/);
+    assert.match(await settings.webContents.executeJavaScript("document.querySelector('.intro').textContent"), /Anthropic[- ]Messages/);
     settings.close();
     getRuntime().trayMenu.getMenuItemById("characters").click();
     await until(() => getRuntime().characterWindow?.isVisible());
@@ -244,7 +244,7 @@ try {
     await until(() => evaluate("document.querySelector('.mascot-svg').dataset.character === 'blue-one-eye'"));
     assert.equal(getRuntime().state.chatOpen, true);
     assert.equal(await evaluate("document.querySelector('#message').value"), "keep draft");
-    restorePetFrame(); setMode("pacman");
+    restorePetFrame(); setMode("beans");
     await until(() => getRuntime().gameWindow?.isVisible());
     const gameWindow = getRuntime().gameWindow;
     const gameJs = code => gameWindow.webContents.executeJavaScript(code);
@@ -272,14 +272,27 @@ try {
   await check("Character import: native picker boundary, real worker conversion, confirm, reopen and removal", ["character", "import", "focus"], async () => {
     const originalPicker = dialog.showOpenDialog;
     const originalMessageBox = dialog.showMessageBox;
-    let pickerCalls = 0, closePrompts = 0;
+    let pickerCalls = 0, closePrompts = 0, rightsPrompts = 0, rightsAllowed = false;
     let picked = path.resolve("assets/characters/black-cat/source.png");
     dialog.showOpenDialog = async () => { pickerCalls++; return picked ? {canceled:false,filePaths:[picked]} : {canceled:true,filePaths:[]}; };
+    dialog.showMessageBox = async (_owner, options) => {
+      if (options.defaultId === 1 && options.cancelId === 1) {
+        rightsPrompts++;
+        return { response: rightsAllowed ? 0 : 1 };
+      }
+      closePrompts++;
+      return { response: 0 };
+    };
     try {
       getRuntime().trayMenu.getMenuItemById("characters").click();
       await until(() => getRuntime().characterWindow?.isVisible());
       const win = getRuntime().characterWindow, js = code => win.webContents.executeJavaScript(code);
       await until(() => js("document.body.dataset.ready === 'true'"));
+      await js("document.querySelector('#choose').click()");
+      await until(() => js("document.body.getAttribute('aria-busy') === 'false'"));
+      assert.equal(rightsPrompts, 1);
+      assert.equal(pickerCalls, 0, "declining the rights confirmation must stop before the native picker");
+      rightsAllowed = true;
       await js("document.querySelector('#choose').click()");
       await until(() => js("!document.querySelector('#draft-fields').hidden || document.querySelector('#status').dataset.error === 'true'"), 12000);
       assert.equal(await js("document.querySelector('#status').dataset.error"), "false", await js("document.querySelector('#status').textContent"));
@@ -288,12 +301,10 @@ try {
       await delay(80);
       assert.equal(pickerCalls, callsBeforeGuard, "reimport guard must run before native picker");
       assert.equal(await js("document.querySelector('#selection-status').textContent.includes('不会覆盖')"), true);
-      dialog.showMessageBox = async () => { closePrompts++; return {response:0}; };
       await delay(80); win.close();
       await until(() => closePrompts === 1);
       assert.equal(win.isDestroyed(), false); assert.equal(win.isVisible(), true);
       assert.equal(await js("document.querySelector('#draft-fields').hidden"), false);
-      dialog.showMessageBox = originalMessageBox;
       assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.character"), "blue-one-eye");
       await js("document.querySelector('button[data-gait=walk]').click()");
       await until(() => js("document.querySelector('#desktop .mascot-svg').getAnimations({subtree:true}).length > 0"));
@@ -357,6 +368,7 @@ try {
   });
   await check("Character color import: raster normalization, editable analysis and live use", ["character", "import", "focus"], async () => {
     const originalPicker = dialog.showOpenDialog;
+    const originalMessageBox = dialog.showMessageBox;
     const { default: sharp } = await import("sharp");
     const fixture = path.resolve("work/character-color-fixture.png");
     await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240">
@@ -368,6 +380,7 @@ try {
       <path d="M178 150Q220 130 205 96" fill="none" stroke="#ffd45a" stroke-width="18" stroke-linecap="round"/>
     </svg>`)).png().toFile(fixture);
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fixture] });
+    dialog.showMessageBox = async () => ({ response: 0 });
     try {
       if (getRuntime().state.manualHidden) await toggleAndWait();
       setMode("pet");
@@ -451,7 +464,7 @@ try {
       await getRuntime().characterWindow.webContents.executeJavaScript("window.confirm=()=>true;document.querySelector('#remove').click()");
       await until(() => evaluate("document.querySelector('.mascot-svg').dataset.character === 'blue-one-eye'"));
       getRuntime().characterWindow.close(); await until(() => !getRuntime().characterWindow);
-    } finally { dialog.showOpenDialog = originalPicker; }
+    } finally { dialog.showOpenDialog = originalPicker; dialog.showMessageBox = originalMessageBox; }
   });
   await check("API settings: tray entry, isolated window, encrypted save, reopen and clear", ["smoke", "settings", "chat"], async () => {
     const items = getRuntime().trayMenu.items;
@@ -476,11 +489,11 @@ try {
     win.webContents.sendInputEvent({ type: "keyDown", keyCode: "A", modifiers: ["meta"] });
     win.webContents.sendInputEvent({ type: "keyUp", keyCode: "A", modifiers: ["meta"] });
     await until(() => js("document.querySelector('#api-key').selectionEnd === 14 && document.querySelector('#api-key').selectionStart === 0"));
-    await js("document.querySelector('#base-url').value='https://evil.test'; document.querySelector('#api-key').value='desktop-fake-key'; document.querySelector('form').requestSubmit()");
+    await js("document.querySelector('#base-url').value='http://models.example'; document.querySelector('#api-key').value='desktop-fake-key'; document.querySelector('#chat-model').value='chat-model'; document.querySelector('form').requestSubmit()");
     await until(() => js("document.querySelector('#status').dataset.error === 'true'"));
     assert.equal(await js("document.querySelector('#api-key').value"), "desktop-fake-key", "保存失败时不能清空待修正的密钥");
     assert.equal(await js("document.body.getAttribute('aria-busy')"), "false");
-    await js("document.querySelector('#base-url').value='https://api.deepseek.com/anthropic'; document.querySelector('#api-key').value='desktop-fake-key'; document.querySelector('form').requestSubmit()");
+    await js("document.querySelector('#base-url').value='https://models.example/anthropic'; document.querySelector('#api-key').value='desktop-fake-key'; document.querySelector('#chat-model').value='chat-model'; document.querySelector('#vision-model').value='vision-model'; document.querySelector('form').requestSubmit()");
     await until(() => js("document.querySelector('#status').textContent.includes('已保存，下次聊天生效')"));
     assert.equal(await js("document.querySelector('#api-key').value"), "");
     const { readFile } = await import("node:fs/promises");
@@ -497,11 +510,11 @@ try {
     assert.equal(await reopened("document.querySelector('#api-key').required"), true);
     await reopened("document.querySelector('#cancel').click()"); await until(() => !getRuntime().settingsWindow);
     await toggleAndWait();
-    setMode("pacman");
+    setMode("beans");
     await until(() => getRuntime().gameWindow?.isVisible());
     getRuntime().trayMenu.getMenuItemById("api-settings").click();
     await until(() => getRuntime().settingsWindow?.isFocused());
-    assert.equal(getRuntime().state.mode, "pacman");
+    assert.equal(getRuntime().state.mode, "beans");
     assert.equal(getRuntime().settingsWindow.isAlwaysOnTop(), false);
     getRuntime().settingsWindow.close();
     setMode("pet");
@@ -735,7 +748,7 @@ try {
       await win.webContents.insertText("你好，呼噜呼噜");await delay(300);
       assert.equal(await evaluate("document.querySelector('#message').value"),"你好，呼噜呼噜");
       assert.deepEqual(win.getBounds(),settled,"typing does not chase the window");
-      for(const text of ["悄悄说吧，我会小声回答。","呼".repeat(50),"a".repeat(50),"👨‍👩‍👧‍👦".repeat(50),"暂时没连上，请检查网络和本机 DeepSeek 配置后再试。"]) {
+      for(const text of ["悄悄说吧，我会小声回答。","呼".repeat(50),"a".repeat(50),"👨‍👩‍👧‍👦".repeat(50),"暂时没连上，请检查网络和本机 API 设置后再试。"]) {
         await evaluate("document.querySelector('#reply').textContent="+JSON.stringify(text));
         assert.ok(await evaluate(`(()=>{
           const input=document.querySelector('#message'),r=input.getBoundingClientRect();
@@ -753,13 +766,13 @@ try {
       assert.equal(await evaluate("document.querySelector('.speech').inert"),true);
     } finally {screen.getCursorScreenPoint=realCursor;setMode("pet");}
   });
-  await check("Hide particles: Pet, Dodge, chat and Pac-Man finish within 500ms and cancel safely", ["hide", "motion"], async()=>{
+  await check("Hide particles: Pet, Dodge, chat and Eat Beans finish within 500ms and cancel safely", ["hide", "motion"], async()=>{
     const realAnimations=systemPreferences.getAnimationSettings;
     systemPreferences.getAnimationSettings=()=>({...realAnimations.call(systemPreferences),prefersReducedMotion:false});
     try {
-      for(const mode of ["pet","dodge","chat","pacman"]) {
+      for(const mode of ["pet","dodge","chat","beans"]) {
         setMode(mode==="chat"?"pet":mode);if(mode==="chat")showChat();
-        const win=mode==="pacman"?getRuntime().gameWindow:getRuntime().petWindow;
+        const win=mode==="beans"?getRuntime().gameWindow:getRuntime().petWindow;
         await until(()=>win.isVisible()&&!win.webContents.isLoading());
         await until(()=>win.webContents.executeJavaScript("Boolean(document.querySelector('.hide-particles'))"));
         await delay(100);
@@ -852,7 +865,7 @@ try {
     assert.equal(quit.role,null);
     assert.equal(getRuntime().tray.listenerCount("click"),0);
     assert.ok(getRuntime().tray.getBounds().width>0);
-    assert.deepEqual(getRuntime().trayMenu.items.filter(item=>item.type==="radio").map(item=>item.id),["dodge","pet","pacman"]);
+    assert.deepEqual(getRuntime().trayMenu.items.filter(item=>item.type==="radio").map(item=>item.id),["dodge","pet","beans"]);
     const petMode=getRuntime().trayMenu.getMenuItemById("pet");
     assert.match(petMode.label,/ⓘ$/);assert.equal(petMode.toolTip,"拖动换位置 · 长按抱抱 · 悬停摸头挠肚肚 · 方向键移动");
     assert.equal(await evaluate("document.querySelector('.pet').hasAttribute('title')"),false,"operation help no longer covers the pet as an HTML tooltip");
@@ -899,7 +912,7 @@ try {
   await check("Mode shortcut: cycle order, repeat guard, chat exit and hidden-pet protection", ["shortcuts", "mode"], async()=>{
     setMode("dodge");cycleMode();assert.equal(getRuntime().state.mode,"pet");
     cycleMode();assert.equal(getRuntime().state.mode,"pet","holding the shortcut cannot race through modes");
-    await delay(420);showChat();cycleMode();assert.equal(getRuntime().state.mode,"pacman");
+    await delay(420);showChat();cycleMode();assert.equal(getRuntime().state.mode,"beans");
     assert.equal(getRuntime().state.chatOpen,false);await until(()=>getRuntime().gameWindow?.isVisible());
     await delay(420);cycleMode();assert.equal(getRuntime().state.mode,"dodge");
     assert.equal(getRuntime().gameWindow,undefined);
@@ -1435,8 +1448,8 @@ try {
     await until(()=>getRuntime().petWindow&&getRuntime().petWindow.id!==old&&!getRuntime().petWindow.webContents.isLoading());
     await delay(180);await visiblePixels();
   });
-  await check("Recovery: Pet and Pac-Man watchdog respect hidden state without stealing focus", ["recovery", "hide", "pacman"], async () => {
-    for (const mode of ["pet", "pacman"]) {
+  await check("Recovery: Pet and Eat Beans watchdog respect hidden state without stealing focus", ["recovery", "hide", "beans"], async () => {
+    for (const mode of ["pet", "beans"]) {
       setMode(mode);
       await until(() => (mode === "pet" ? getRuntime().petWindow : getRuntime().gameWindow)?.isVisible());
       const win = mode === "pet" ? getRuntime().petWindow : getRuntime().gameWindow;
@@ -1465,8 +1478,8 @@ try {
     }
     setMode("pet");
   });
-  await check("Pac-Man resize: real native shrink preserves progress and every bean remains collectable", ["focus", "pacman", "recovery"], async () => {
-    setMode("pacman");
+  await check("Eat Beans resize: real native shrink preserves progress and every bean remains collectable", ["focus", "beans", "recovery"], async () => {
+    setMode("beans");
     await until(() => getRuntime().gameWindow?.isVisible());
     const win = getRuntime().gameWindow;
     const js = code => win.webContents.executeJavaScript(code);
@@ -1499,12 +1512,12 @@ try {
     assert.equal(await js("import('./game.js').then(({game})=>game.level)"), 4);
     setMode("pet");
   });
-  await check("Pac-Man: smaller lidless sprite, real bean clears accelerate each round, hide/restore and restart", ["smoke", "focus", "pacman", "mode"], async()=>{
-    setMode("pacman");await until(()=>getRuntime().gameWindow?.isVisible());
+  await check("Eat Beans: smaller lidless sprite, real bean clears accelerate each round, hide/restore and restart", ["smoke", "focus", "beans", "mode"], async()=>{
+    setMode("beans");await until(()=>getRuntime().gameWindow?.isVisible());
     const win=getRuntime().gameWindow;await delay(150);
     const js=code=>win.webContents.executeJavaScript(code);
     await until(()=>js("Boolean(document.querySelector('.mascot-svg'))"));
-    assert.equal(await js("document.querySelectorAll('.lid').length"),0,"Pac-Man has no eyelid node");
+    assert.equal(await js("document.querySelectorAll('.lid').length"),0,"Eat Beans has no eyelid node");
     assert.equal(await js("getComputedStyle(document.querySelector('#game-pet')).width"),"64px");
     const before=await js("document.querySelector('#game-pet').style.transform");
     const initialPet = await js("document.querySelector('#game-pet').getBoundingClientRect().toJSON()");
@@ -1521,7 +1534,7 @@ try {
     assert.ok(parseFloat(await js("document.querySelector('.mascot-svg').style.getPropertyValue('--gaze-x')")) < 0, "左朝向时局部瞳孔偏移应补偿镜像，最终仍看向右侧光标");
     await visiblePixels(win);
     const sprite=await js("document.querySelector('#game-pet').getBoundingClientRect().toJSON()");
-    await writeFile(path.resolve("work/pacman-no-lid.png"),(await win.webContents.capturePage({x:Math.round(sprite.x),y:Math.round(sprite.y),width:64,height:64})).toPNG());
+    await writeFile(path.resolve("work/beans-no-lid.png"),(await win.webContents.capturePage({x:Math.round(sprite.x),y:Math.round(sprite.y),width:64,height:64})).toPNG());
     // Deterministic two-bean round; real key input and animation frames must eat both.
     await js("import('./game.js').then(({game})=>{Object.assign(game.pet,{x:200,y:200,vx:0,vy:0});game.pellets=[{x:260,y:200,radius:5,glow:0},{x:340,y:200,radius:5,glow:0}];})");
     win.webContents.sendInputEvent({type:"keyDown",keyCode:"RIGHT"});
@@ -1540,12 +1553,12 @@ try {
     await js("import('./game.js').then(({game})=>{Object.assign(game.pet,{y:140,vy:-1000,vx:0});})");
     await delay(60);
     assert.ok((await js("document.querySelector('#game-pet').getBoundingClientRect().top"))>hud.bottom);
-    await writeFile(path.resolve("work/pacman-round-3.png"),(await win.webContents.capturePage()).toPNG());
+    await writeFile(path.resolve("work/beans-round-3.png"),(await win.webContents.capturePage()).toPNG());
     await toggleAndWait();assert.equal(win.isVisible(),false);await toggleAndWait();assert.equal(win.isVisible(),true);
     assert.equal(await js("document.querySelectorAll('.lid').length"),0);
     assert.equal(await js("document.querySelector('#round').textContent"),"3");
     win.webContents.sendInputEvent({type:"keyDown",keyCode:"ESCAPE"});await delay(180);assert.equal(getRuntime().state.mode,"pet");await visiblePixels();
-    setMode("pacman");await until(()=>getRuntime().gameWindow?.isVisible());await delay(200);
+    setMode("beans");await until(()=>getRuntime().gameWindow?.isVisible());await delay(200);
     assert.equal(await getRuntime().gameWindow.webContents.executeJavaScript("document.querySelector('#speed').textContent"),"1.00×");
     setMode("pet");
   });

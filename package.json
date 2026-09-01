@@ -1,7 +1,7 @@
 {
   "name": "blue-one-eye-pet",
   "version": "0.4.5",
-  "description": "A shy one-eyed desktop pet that dodges, cuddles, chats, and plays Pac-Man.",
+  "description": "A shy one-eyed desktop pet that dodges, cuddles, chats, and collects beans.",
   "type": "module",
   "main": "src/main.js",
   "bin": {
@@ -13,6 +13,7 @@
     "assets",
     "scripts",
     "AGENTS.md",
+    "ASSETS-LICENSE.md",
     "LICENSE",
     "README.md"
   ],
@@ -70,6 +71,7 @@
     "files": [
       "src/**/*",
       "assets/**/*",
+      "ASSETS-LICENSE.md",
       "package.json"
     ]
   }

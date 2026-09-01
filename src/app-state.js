@@ -11,7 +11,7 @@ export function transitionState(state, action) {
     }
     case "chat":
       return {
-        mode: state.mode === MODES.PACMAN ? MODES.PET : state.mode,
+        mode: state.mode === MODES.BEANS ? MODES.PET : state.mode,
         chatOpen: true,
         manualHidden: false,
         controlActive: false,

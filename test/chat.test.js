@@ -1,15 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {askClaude, chatSystemPrompt} from "../src/chat.js";
-import {deepseekCredentials} from "../src/chat-provider.js";
+import {messagesUrl, providerFromEnvironment} from "../src/chat-provider.js";
 import { BLACK_CAT_PROFILE } from "../src/character-profile.js";
-const provider=async()=>({url:"https://api.deepseek.com/anthropic/v1/messages",key:"test-only-key"});
-test("chat explicitly requests Flash with thinking disabled, low effort and no tools",async()=>{
+const provider=async()=>({url:"https://models.example/v1/messages",key:"test-only-key",model:"chat-model",visionModel:"vision-model"});
+test("chat uses the configured model without provider-specific fields or tools",async()=>{
   const reply=await askClaude("  你好  ",{provider,request:async(url,options)=>{
     assert.equal(url,(await provider()).url);assert.equal(options.redirect,"error");
     const body=JSON.parse(options.body);
-    assert.equal(body.model,"deepseek-v4-flash");assert.deepEqual(body.thinking,{type:"disabled"});
-    assert.deepEqual(body.output_config,{effort:"low"});assert.equal(body.max_tokens,160);
+    assert.equal(body.model,"chat-model");assert.equal(body.thinking,undefined);
+    assert.equal(body.output_config,undefined);assert.equal(body.max_tokens,160);
+    assert.equal(options.headers.authorization,"Bearer test-only-key");
     assert.equal(body.tools,undefined);assert.deepEqual(body.messages,[{role:"user",content:"你好"}]);
     return Response.json({content:[{type:"thinking",thinking:"not displayed"},{type:"text",text:"蓝".repeat(100)}]});
   }});
@@ -25,11 +26,13 @@ test("chat prompt follows the selected trusted character persona", async () => {
     return Response.json({ content: [{ type: "text", text: "……你好。" }] });
   }});
 });
-test("credential routing never pairs an unrelated provider key with DeepSeek",()=>{
-  for(const base of ["https://ark.cn-beijing.volces.com/api/plan","https://api.deepseek.com.evil.test","http://api.deepseek.com"])
-    assert.equal(deepseekCredentials({ANTHROPIC_BASE_URL:base,ANTHROPIC_API_KEY:"test-only"}),undefined);
-  assert.equal(deepseekCredentials({ANTHROPIC_BASE_URL:"https://api.deepseek.com/anthropic"}),undefined);
-  assert.equal(deepseekCredentials({ANTHROPIC_BASE_URL:"https://api.deepseek.com/anthropic",ANTHROPIC_AUTH_TOKEN:"test-only"}).key,"test-only");
+test("generic provider accepts HTTPS bases and only reads BLUEPET variables",()=>{
+  assert.equal(messagesUrl("https://models.example/anthropic"),"https://models.example/anthropic/v1/messages");
+  assert.equal(messagesUrl("https://models.example/v1/messages"),"https://models.example/v1/messages");
+  for(const base of ["http://models.example","https://user@models.example","https://models.example/?token=x"])
+    assert.throws(()=>messagesUrl(base));
+  assert.equal(providerFromEnvironment({ANTHROPIC_BASE_URL:"https://ignored.example",ANTHROPIC_API_KEY:"ignored"}),undefined);
+  assert.equal(providerFromEnvironment({BLUEPET_API_BASE_URL:"https://models.example",BLUEPET_API_KEY:"test-only",BLUEPET_CHAT_MODEL:"chat-model"}).model,"chat-model");
 });
 test("chat validates input and handles auth, rate limits and timeouts without raw provider errors",async()=>{
   await assert.rejects(askClaude("  ",{provider}),/悄悄/);
@@ -53,16 +56,17 @@ test("API settings validate URLs and securely persist without returning keys", a
   };
   const directory = await mkdtemp(join(tmpdir(), "bluepet-settings-"));
   try {
-    for (const baseUrl of ["http://api.deepseek.com", "https://evil.test", "https://api.deepseek.com.evil.test", "https://user@api.deepseek.com", "https://api.deepseek.com/other", "https://api.deepseek.com/?token=x"])
-      assert.throws(() => validateApiSettings({ baseUrl, apiKey: "fake-key" }));
+    for (const baseUrl of ["http://models.example", "https://user@models.example", "https://models.example/?token=x"])
+      assert.throws(() => validateApiSettings({ baseUrl, apiKey: "fake-key", model: "chat-model" }));
     const store = createApiSettingsStore({ directory, secureStorage });
     assert.equal(store.provider(), undefined);
-    const value = { baseUrl: "https://api.deepseek.com", apiKey: "fake-key" };
+    const value = { baseUrl: "https://models.example/anthropic", apiKey: "fake-key", model: "chat-model", visionModel: "vision-model" };
     const status = store.save(value);
-    assert.deepEqual(status, { configured: true, baseUrl: "https://api.deepseek.com/anthropic" });
+    assert.deepEqual(status, { configured: true, baseUrl: "https://models.example/anthropic", model: "chat-model", visionModel: "vision-model" });
     assert.ok(!(await readFile(join(directory, "api-settings.enc"))).includes(Buffer.from("fake-key")));
     const reopened = createApiSettingsStore({ directory, secureStorage });
     assert.equal(reopened.provider().key, "fake-key");
+    assert.equal(reopened.provider().url, "https://models.example/anthropic/v1/messages");
     reopened.save({ ...value, apiKey: "" });
     assert.equal(reopened.provider().key, "fake-key");
     reopened.save({ ...value, apiKey: "replacement" });
@@ -74,7 +78,7 @@ test("API settings validate URLs and securely persist without returning keys", a
     assert.throws(() => unavailable.save(value), /系统加密/);
     await writeFile(join(directory, "api-settings.enc"), "corrupt");
     assert.throws(() => reopened.provider(), /无法解密/);
-    assert.equal(reopened.clear().configured, false);
+    assert.deepEqual(reopened.clear(), { configured: false, baseUrl: "", model: "", visionModel: "" });
     assert.equal(reopened.provider(), undefined);
     assert.throws(() => reopened.save({ ...value, apiKey: "" }), /API Key/);
   } finally { await rm(directory, { recursive: true, force: true }); }

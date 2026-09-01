@@ -20,10 +20,10 @@ const valid = {
 test("vision analysis uses the dedicated model and validates normalized part boxes", async () => {
   const bytes = await readFile(new URL("../assets/characters/black-cat/source.png", import.meta.url));
   const result = await analyzeCharacterImage({ bytes, mime: "image/png" }, {
-    provider: async () => ({ url: "https://api.deepseek.com/anthropic/v1/messages", key: "test-only" }),
+    provider: async () => ({ url: "https://models.example/v1/messages", key: "test-only", model: "chat-model", visionModel: "vision-model" }),
     request: async (_url, options) => {
       const body = JSON.parse(options.body);
-      assert.equal(body.model, "deepseek-v4-flash-vision-exp");
+      assert.equal(body.model, "vision-model");
       assert.equal(body.messages[0].content[1].type, "image");
       assert.equal(body.messages[0].content[1].source.media_type, "image/png");
       assert.ok(body.messages[0].content[1].source.data.length > 100);

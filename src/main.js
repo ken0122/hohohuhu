@@ -166,7 +166,7 @@ function bindEditingShortcuts(win) {
 }
 
 function activeWindow() {
-  return state.mode === MODES.PACMAN ? gameWindow : petWindow;
+  return state.mode === MODES.BEANS ? gameWindow : petWindow;
 }
 
 function send(channel, payload) {
@@ -418,7 +418,7 @@ export function restorePetFrame() {
 export function showChat() {
   const wasHidden = state.manualHidden || !activeWindow()?.isVisible();
   interruptInteraction();
-  if (state.mode === MODES.PACMAN) setMode(MODES.PET);
+  if (state.mode === MODES.BEANS) setMode(MODES.PET);
   dispatch("chat");
   if (wasHidden) pinPet();
   syncWindows({ focus: true });
@@ -453,7 +453,7 @@ function closeGame() {
   win.close();
 }
 function syncGame({ focus = false, relocateGame = false } = {}) {
-  if (state.mode !== MODES.PACMAN) {
+  if (state.mode !== MODES.BEANS) {
     closeGame();
     return;
   }
@@ -587,7 +587,7 @@ function tick() {
     dt = Math.min(0.06, elapsed);
   if (elapsed < 0.004) return; // Bound IPC bursts without imposing a 60Hz ceiling.
   lastTick = now;
-  if (!petReady || dragSession || state.manualHidden || state.mode === MODES.PACMAN) {
+  if (!petReady || dragSession || state.manualHidden || state.mode === MODES.BEANS) {
     dodge.reset();
     return;
   }
@@ -805,7 +805,7 @@ function showApiSettings() {
   }
   const win = new BrowserWindow({
     width: 480,
-    height: 510,
+    height: 650,
     resizable: false,
     maximizable: false,
     title: t(locale, "settingsTitle", { brand: brand(locale) }),
@@ -860,7 +860,7 @@ function rebuildTrayMenu() {
     ...[
       [MODES.DODGE, t(locale, "modeDodge")],
       [MODES.PET, t(locale, "modePet")],
-      [MODES.PACMAN, t(locale, "modePacman")],
+      [MODES.BEANS, t(locale, "modeBeans")],
     ].map(([value, label]) => ({
       id: value,
       label: value === MODES.PET ? `${label}  ⓘ` : label,
@@ -1064,12 +1064,12 @@ export const ready = app.whenReady().then(async () => {
   // renderer clock, but must still be recoverable. Never unhide a manual hide.
   loop = setInterval(() => {
     reducedMotion = systemPreferences.getAnimationSettings().prefersReducedMotion;
-    const ready = state.mode === MODES.PACMAN ? gameReady : petReady;
+    const ready = state.mode === MODES.BEANS ? gameReady : petReady;
     if (ready && !state.manualHidden && !activeWindow()?.isVisible()) {
       recoverWindows({ relocateGame: false });
     }
   }, 500);
-  if (initialMode === MODES.PACMAN) syncGame({ focus: true });
+  if (initialMode === MODES.BEANS) syncGame({ focus: true });
   for (const event of ["display-added", "display-removed", "display-metrics-changed"])
     screen.on(event, () => recoverWindows());
   for (const event of ["resume", "unlock-screen"])
