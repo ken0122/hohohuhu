@@ -95,12 +95,13 @@ const ANALYSIS_PROMPT = `分析这张桌面宠物角色图片。只返回一个 
 图片要求：只有一个完整角色，不能裁切；透明或纯色简洁背景；正面或轻微侧面；眼睛、头、身体和附肢边界清楚。
 quality.decision 只能是 pass、warn、reject。quality.issues 只能使用 multiple-subjects、cropped、busy-background、low-resolution、occluded、not-character、unclear-parts、side-view。
 persona.archetype 只能是 shy、proud、cheerful、calm、curious、mischievous；persona.voice 只能是 soft、reserved、bright、steady、curious、playful。
-dialogue 必须包含 headpat、tickle、poke、cuddle、nuzzle、hop、shy，每项给 2 句符合角色气质的中文短句，每句不超过 50 字。
+dialogue 必须包含 headpat、tickle、poke、cuddle、nuzzle、hop、shy，每项给 2 句符合角色气质的目标语言短句，每句不超过 50 个字符。
 easterEgg 给这个角色设计一个专属彩蛋：triggerIntent 只能使用上述七个互动名；名称、说明和触发后的短句必须符合角色形象，不得依赖声音或图片中不可动的部件。
 parts 必须列出所有能确认的 body、head、eye、mouth、ear、arm、leg、tail、accessory。每只清晰可见的眼睛尽量单独给一个 eye 框，不要把整张脸当成 eye；无法可靠分开时才给一个覆盖双眼的框。box 是相对整张图片的 [x,y,width,height]，每个数 0 到 1；confidence 也是 0 到 1。
 JSON 结构：{"quality":{"decision":"pass","issues":[],"explanation":""},"persona":{"archetype":"curious","voice":"curious","identity":"","summary":"","traits":[""]},"dialogue":{"headpat":["",""] ,"tickle":["",""] ,"poke":["",""] ,"cuddle":["",""] ,"nuzzle":["",""] ,"hop":["",""] ,"shy":["",""]},"easterEgg":{"label":"","description":"","triggerIntent":"headpat","message":""},"parts":[{"kind":"body","confidence":0.9,"box":[0.1,0.1,0.8,0.8]}]}`;
+const ANALYSIS_LANGUAGE = { "zh-CN":"简体中文", "zh-TW":"繁体中文", en:"English", ja:"日本語", fr:"français", de:"Deutsch", ru:"русский язык" };
 
-export async function analyzeCharacterImage({ bytes, mime }, { provider = loadChatProvider, request = fetch } = {}) {
+export async function analyzeCharacterImage({ bytes, mime }, { provider = loadChatProvider, request = fetch, locale = "zh-CN" } = {}) {
   const source = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
   const info = inspectCharacterImage(source);
   if (mime !== info.mime) throw new Error("图片类型与文件内容不一致。");
@@ -112,7 +113,7 @@ export async function analyzeCharacterImage({ bytes, mime }, { provider = loadCh
       body: JSON.stringify({
         model: CHARACTER_VISION_MODEL, max_tokens: 1400, thinking: { type: "disabled" }, output_config: { effort: "low" },
         messages: [{ role: "user", content: [
-          { type: "text", text: ANALYSIS_PROMPT },
+          { type: "text", text: ANALYSIS_PROMPT + `\n所有面向用户的文字字段必须使用${ANALYSIS_LANGUAGE[locale] || ANALYSIS_LANGUAGE.en}。` },
           { type: "image", source: { type: "base64", media_type: info.mime, data: Buffer.from(source).toString("base64") } },
         ] }],
       }),

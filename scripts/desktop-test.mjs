@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { app, dialog, globalShortcut, nativeImage, screen, powerMonitor, systemPreferences } from "electron";
+import { app, dialog, globalShortcut, nativeImage, nativeTheme, screen, powerMonitor, systemPreferences } from "electron";
 
 // Do not await app readiness at module top level: Electron awaits ESM evaluation.
 // Real Electron windows, isolated app data. Live chat is explicitly opt-in.
 await mkdir(path.resolve("work"), { recursive: true });
-app.setPath("userData", await mkdtemp(path.resolve("work/desktop-test-")));
+const testUserData = await mkdtemp(path.resolve("work/desktop-test-"));
+app.setPath("userData", testUserData);
+await writeFile(path.join(testUserData, "preferences-v1.json"), JSON.stringify({ version: 1, theme: "system", locale: "zh-CN" }));
 process.env.BLUEPET_TEST_CHARACTER_ANALYSIS = "1";
 const runtime = await import(process.env.BLUEPET_TEST_APP_ROOT
   ? pathToFileURL(path.join(process.env.BLUEPET_TEST_APP_ROOT, "src/main.js")).href
@@ -73,6 +75,34 @@ try {
   await until(() => getRuntime().petWindow && !getRuntime().petWindow.webContents.isLoading());
   await delay(200);
   await until(()=>evaluate("Boolean(document.querySelector('.mascot-svg'))"));
+  await check("appearance and language switch live without reloading or losing state", async () => {
+    setMode("pet"); showChat(); await until(() => getRuntime().state.chatOpen && getRuntime().petWindow.isVisible());
+    const win = getRuntime().petWindow, id = win.webContents.id;
+    await evaluate("document.querySelector('#message').value='keep-this-draft'");
+    getRuntime().trayMenu.getMenuItemById("locale-de").click();
+    await until(() => evaluate("document.documentElement.lang === 'de'"));
+    assert.equal(getRuntime().trayMenu.getMenuItemById("quit").label, "Hulu Hulu beenden");
+    assert.equal(await evaluate("document.querySelector('#message').value"), "keep-this-draft");
+    assert.equal(win.webContents.id, id, "locale changes do not reload the renderer");
+    getRuntime().trayMenu.getMenuItemById("theme-dark").click();
+    await until(() => evaluate("matchMedia('(prefers-color-scheme: dark)').matches"));
+    assert.equal(nativeTheme.themeSource, "dark");
+    getRuntime().trayMenu.getMenuItemById("api-settings").click();
+    await until(() => getRuntime().settingsWindow?.isVisible());
+    const settings = getRuntime().settingsWindow;
+    assert.equal(await settings.webContents.executeJavaScript("document.documentElement.lang"), "de");
+    assert.equal(await settings.webContents.executeJavaScript("getComputedStyle(document.documentElement).backgroundColor"), "rgb(17, 24, 43)");
+    settings.close(); restorePetFrame();
+    await toggleAndWait();
+    getRuntime().trayMenu.getMenuItemById("locale-fr").click();
+    assert.equal(getRuntime().state.manualHidden, true);
+    assert.equal(win.isVisible(), false, "preference changes cannot reveal a manual hide");
+    getRuntime().trayMenu.getMenuItemById("locale-zh-CN").click();
+    getRuntime().trayMenu.getMenuItemById("theme-system").click();
+    await toggleAndWait();
+    await until(() => getRuntime().petWindow.isVisible());
+    await until(() => getRuntime().preferences.resolvedLocale === "zh-CN");
+  });
   await check("Character library: preview/apply, hidden state, live replacement and game continuity", async () => {
     setMode("pet"); await until(() => !getRuntime().modeTransition, 7000);
     await toggleAndWait();
@@ -95,6 +125,9 @@ try {
     assert.match(await js("document.querySelector('#easter-egg').textContent"), /三连点亮/);
     assert.match(await js("document.querySelector('#capabilities').textContent"), /珊瑚色眼睛会跟随/);
     await until(async () => yellowPixels(await win.webContents.capturePage()) > 500);
+    await js("document.querySelector('button[data-gait=run]').click()");
+    await until(() => js("getComputedStyle(document.querySelector('#large .character-gait-outline')).d !== 'none' && document.querySelector('#large .character-gait-outline').getAnimations()[0]?.effect.getTiming().duration === 220"));
+    await js("document.querySelector('button[data-gait=idle]').click()");
     await js("document.querySelector('.stage').dispatchEvent(new PointerEvent('pointermove',{clientX:700,clientY:120,bubbles:true}))");
     assert.equal(await js("document.querySelector('#large svg').dataset.looking"), "true");
     await js("document.querySelector('#egg-preview').click()");
@@ -209,11 +242,11 @@ try {
       dialog.showMessageBox = originalMessageBox;
       assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.character"), "blue-one-eye");
       await js("document.querySelector('button[data-gait=walk]').click()");
-      await until(() => js("document.querySelector('#desktop .character-root').getAnimations().length > 0"));
+      await until(() => js("document.querySelector('#desktop .mascot-svg').getAnimations({subtree:true}).length > 0"));
       await js("document.querySelector('#pause').click()");
-      assert.equal(await js("document.querySelector('#desktop .character-root').getAnimations().length"),0);
+      assert.equal(await js("document.querySelector('#desktop .mascot-svg').getAnimations({subtree:true}).length"),0);
       await js("document.querySelector('#pause').click()");
-      await until(() => js("document.querySelector('#desktop .character-root').getAnimations().length > 0"));
+      await until(() => js("document.querySelector('#desktop .mascot-svg').getAnimations({subtree:true}).length > 0"));
       await js("document.querySelector('button[data-gait=idle]').click();document.querySelector('#character-name').value='桌面测试角色'");
       assert.equal(await js("document.querySelector('#apply').getBoundingClientRect().bottom <= innerHeight"),true);
       await writeFile(path.resolve("work/character-import.png"),(await win.webContents.capturePage()).toPNG());
@@ -295,6 +328,12 @@ try {
       await until(async () => yellowPixels(await win.webContents.capturePage()) > 500);
       assert.ok(yellowPixels(await win.webContents.capturePage()) > 500, "彩色角色预览应渲染真实黄色像素，而不是破图图标");
       assert.deepEqual(await js("[document.querySelectorAll('.imported-eye-masks ellipse').length,document.querySelectorAll('.imported-pupils circle').length]"), [6, 6], "三种预览尺寸都应遮住两枚固定瞳孔并换成可移动瞳孔");
+      assert.equal(await js("document.querySelectorAll('.character-gait-raster').length"), 3, "无腿彩色角色的三个预览尺寸都应绑定下轮廓位移");
+      await js("document.querySelector('button[data-gait=run]').click()");
+      await until(() => js("Math.abs(Number(document.querySelector('#large .character-gait-displacement').getAttribute('scale'))) > .5"));
+      await writeFile(path.resolve("work/character-color-raster-gait.png"), (await win.webContents.capturePage()).toPNG());
+      await js("document.querySelector('button[data-gait=idle]').click()");
+      assert.equal(await js("document.querySelector('#large .character-gait-displacement').getAttribute('scale')"), "0");
       await writeFile(path.resolve("work/character-color-import.png"), (await win.webContents.capturePage()).toPNG());
       assert.deepEqual(await js("Array.from(document.querySelectorAll('.part-row select'),select=>select.value)"), ["body", "eye"]);
       await js(`document.querySelector('#character-name').value='彩色测试角色';
@@ -332,6 +371,7 @@ try {
       await focusWindow(petWindow);
       petWindow.webContents.sendInputEvent({type:"keyDown",keyCode:"LEFT"}); await delay(100);
       assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.facing"), "left");
+      await until(() => evaluate("Math.abs(Number(document.querySelector('.character-gait-displacement').getAttribute('scale'))) > .5"));
       petWindow.webContents.sendInputEvent({type:"keyUp",keyCode:"LEFT"});
       await until(() => evaluate("document.querySelector('.mascot-svg').dataset.gait === 'idle'"));
       assert.equal(await evaluate("document.querySelector('.mascot-svg').dataset.facing"), "left", "静止时保留最后朝向");

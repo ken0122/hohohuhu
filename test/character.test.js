@@ -15,7 +15,11 @@ function fixture({ basic = false, reducedMotion = false, definition } = {}) {
   const doc = new Signals(), reduced = new Signals();
   const classes = new Map();
   doc.hidden = false; reduced.matches = reducedMotion;
-  doc.defaultView = { matchMedia: () => reduced };
+  doc.defaultView = {
+    matchMedia: () => reduced,
+    requestAnimationFrame(callback) { doc.raf = callback; return 1; },
+    cancelAnimationFrame() { doc.raf = undefined; },
+  };
   function element() {
     const properties = new Map();
     const node = {
@@ -27,7 +31,8 @@ function fixture({ basic = false, reducedMotion = false, definition } = {}) {
       },
       animate(frames, options) {
         const animation = {
-          frames, options, playState: "running",
+          frames, options, playState: "running", currentTime: 0,
+          effect: { getTiming: () => ({ duration: options.duration }) },
           cancel() { this.playState = "idle"; },
           pause() { this.playState = "paused"; },
           play() { this.playState = "running"; },
@@ -39,6 +44,10 @@ function fixture({ basic = false, reducedMotion = false, definition } = {}) {
         this.attributes.set(name, value);
         if (name === "class") for (const name of value.split(/\s+/)) classes.set(name, this);
       },
+      getAttribute(name) { return this.attributes.get(name) ?? null; },
+      removeAttribute(name) { this.attributes.delete(name); },
+      querySelector(selector) { return selector.startsWith("image[") ? doc.rasterImage || null : null; },
+      querySelectorAll() { return doc.genericPaths || []; },
       append(...children) {
         for (const child of children) {
           child.parent?.children.splice(child.parent.children.indexOf(child), 1);
@@ -103,6 +112,59 @@ test("basic SVG needs no anatomy and pauses, resumes and resets generic gait", t
   character.motion({ gait: "unknown" });
   assert.equal(f.svg.dataset.gait, "idle");
   assert.equal(f.root.animations.at(-1).playState, "idle");
+});
+
+test("generic path characters without clear legs derive a lower-outline gait", t => {
+  const definition = { ...BASIC_SVG, interactionParts: [{ kind: "body", confidence: .98, box: [.1,.1,.8,.85] }] };
+  const f = fixture({ definition });
+  const body = f.doc.createElementNS();
+  body.setAttribute("d", "M8 8Q32 2 56 8L56 56Q44 61 32 56Q20 61 8 56Z");
+  body.setAttribute("fill", "#111111");
+  f.doc.genericPaths = [body];
+  const character = createCharacter(f.svg, definition);
+  t.after(() => character.destroy());
+  character.motion({ gait: "walk" });
+  assert.ok(body.animations[0].frames.every(frame => frame.d && !frame.transform));
+  assert.equal(f.root.animations.length, 0);
+});
+
+test("generic characters with clear leg metadata keep their authored silhouette", t => {
+  const definition = { ...BASIC_SVG, interactionParts: [{ kind: "leg", confidence: .9, box: [.2,.7,.2,.25] }] };
+  const f = fixture({ definition });
+  const body = f.doc.createElementNS();
+  body.setAttribute("d", "M8 8L56 8L56 56L8 56Z"); body.setAttribute("fill", "#111111");
+  f.doc.genericPaths = [body];
+  const character = createCharacter(f.svg, definition);
+  t.after(() => character.destroy());
+  character.motion({ gait: "run" });
+  assert.ok(f.root.animations[0].frames.every(frame => frame.transform && !frame.d));
+  assert.equal(body.animations.length, 0);
+});
+
+test("raster-wrapped characters without legs receive a bounded lower-outline displacement gait", t => {
+  const definition = { ...BASIC_SVG, interactionParts: [{ kind: "body", confidence: 1, box: [.2,.08,.6,.86] }] };
+  const f = fixture({ definition }), image = f.doc.createElementNS();
+  image.setAttribute("href", "data:image/png;base64,iVBORw0KGgo=");
+  f.doc.rasterImage = image; f.svg.append(image);
+  const character = createCharacter(f.svg, definition);
+  t.after(() => character.destroy());
+  const displacement = f.classes.get("character-gait-displacement");
+  assert.match(image.getAttribute("filter"), /^url\(#character-gait-filter-/);
+  character.motion({ gait: "run" });
+  const clock = image.animations[0];
+  assert.equal(clock.options.duration, 220);
+  clock.currentTime = 55; f.doc.raf();
+  assert.ok(Math.abs(Number(displacement.getAttribute("scale"))) > 2, "run reaches a visible alternating-foot displacement");
+  f.reduced.matches = true; f.reduced.dispatchEvent(new Event("change"));
+  assert.equal(displacement.getAttribute("scale"), "0");
+  assert.equal(clock.playState, "idle");
+  f.reduced.matches = false; f.reduced.dispatchEvent(new Event("change"));
+  assert.equal(image.animations.at(-1).playState, "running");
+  character.motion({ gait: "idle" });
+  assert.equal(displacement.getAttribute("scale"), "0");
+  assert.equal(clock.playState, "idle");
+  character.destroy();
+  assert.equal(image.getAttribute("filter"), null);
 });
 
 test("black cat adds two runtime-only pupils with bounded shared gaze", t => {

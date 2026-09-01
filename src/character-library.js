@@ -5,9 +5,10 @@ import { fileURLToPath } from "node:url";
 import { BLUE_ONE_EYE, BLACK_CAT, SUNNY_YELLOW } from "./characters.js";
 import { inspectCharacterImage, MAX_IMAGE_BYTES } from "./character-import.js";
 import { createCharacterStore } from "./character-store.js";
+import { brand, t } from "./i18n.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
-export async function createCharacterLibrary({ directory, onChange, onOpen, bindEditingShortcuts, analyzeImage, shouldForceClose = () => false }) {
+export async function createCharacterLibrary({ directory, onChange, onOpen, bindEditingShortcuts, analyzeImage, locale = () => "zh-CN", backgroundColor = () => "#fbfcff", shouldForceClose = () => false }) {
   const store = await createCharacterStore(directory);
   const sources = new Map(await Promise.all([BLUE_ONE_EYE, BLACK_CAT, SUNNY_YELLOW].map(async definition => [
     definition.id, await readFile(path.join(dirname, "../assets", definition.asset), "utf8"),
@@ -24,9 +25,9 @@ export async function createCharacterLibrary({ directory, onChange, onOpen, bind
     const owner = window;
     try {
       const result = await dialog.showOpenDialog(owner, {
-        title: "添加角色",
-        message: "图片会发给 DeepSeek，用来分析角色气质和互动部件。保存后会新增角色，不会覆盖当前角色。",
-        buttonLabel: "选图并分析",
+        title: t(locale(), "chooseImageTitle"),
+        message: t(locale(), "chooseImageMessage"),
+        buttonLabel: t(locale(), "chooseImageButton"),
         properties: ["openFile"],
         filters: [{ name: "PNG / JPG", extensions: ["png", "jpg", "jpeg"] }],
       });
@@ -67,8 +68,8 @@ export async function createCharacterLibrary({ directory, onChange, onOpen, bind
       onOpen();
       if (window && !window.isDestroyed()) { window.show(); window.focus(); return; }
       const win = window = new BrowserWindow({
-        title: "角色 · 呼噜呼噜", width: 820, height: 800, minWidth: 720, minHeight: 620,
-        backgroundColor: "#fbfcff", show: false,
+        title: t(locale(), "libraryTitle", { brand: brand(locale()) }), width: 820, height: 800, minWidth: 720, minHeight: 620,
+        backgroundColor: backgroundColor(), show: false,
         webPreferences: { preload: path.join(dirname, "character-preload.cjs"), sandbox: true, contextIsolation: true, nodeIntegration: false },
       });
       bindEditingShortcuts(win);
@@ -81,9 +82,9 @@ export async function createCharacterLibrary({ directory, onChange, onOpen, bind
         if (closingPrompt) return;
         closingPrompt = true;
         dialog.showMessageBox(win, {
-          type: "warning", title: "放弃修改？", message: "这些改动还没保存。",
-          detail: "继续编辑会保留当前内容；放弃后无法恢复。",
-          buttons: ["继续编辑", "放弃并关闭"], defaultId: 0, cancelId: 0,
+          type: "warning", title: t(locale(), "discardTitle"), message: t(locale(), "discardMessage"),
+          detail: t(locale(), "discardDetail"),
+          buttons: [t(locale(), "keepEditing"), t(locale(), "discardClose")], defaultId: 0, cancelId: 0,
         }).then(({ response }) => {
           closingPrompt = false;
           if (response === 1 && !win.isDestroyed()) { forceClose = true; win.close(); }

@@ -8,6 +8,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   Notification,
   powerMonitor,
   screen,
@@ -45,6 +46,8 @@ import { loadChatProvider } from "./chat-provider.js";
 import { askClaude } from "./chat.js";
 import { createDodgeMotion } from "./dodge.js";
 import { arriveAt, launchVelocity } from "./mode-motion.js";
+import { brand, t } from "./i18n.js";
+import { createPreferencesStore, LOCALE_CHOICES, THEMES } from "./preferences.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PET_SIZE = PET_FRAME_SIZE;
@@ -63,7 +66,8 @@ const requestedMode = normalizeMode(
 );
 const initialMode = Object.values(MODES).includes(requestedMode) ? requestedMode : MODES.DODGE;
 const state = { mode: initialMode, manualHidden: false, chatOpen: false, controlActive: false };
-let petWindow, hintWindow, gameWindow, settingsWindow, apiSettingsStore, characterLibrary, tray, trayMenu, loop;
+let petWindow, hintWindow, gameWindow, settingsWindow, apiSettingsStore, preferencesStore, characterLibrary, tray, trayMenu, loop;
+let locale = "zh-CN";
 let selectedCharacter = BLUE_ONE_EYE;
 let petReady = false,
   gameReady = false,
@@ -103,6 +107,44 @@ const hintWebPreferences = {
   nodeIntegration: false,
   backgroundThrottling: false,
 };
+
+const windowBackground = () => nativeTheme.shouldUseDarkColors ? "#11182b" : "#fbfcff";
+function preferences() { return preferencesStore?.get() || { version: 1, theme: "system", locale: "system", resolvedLocale: locale }; }
+function rendererWindows() { return [petWindow, hintWindow, gameWindow, settingsWindow, characterLibrary?.window].filter(win => win && !win.isDestroyed()); }
+function fromRenderer(event) { return rendererWindows().some(win => event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame); }
+function broadcastPreferences() {
+  const value = preferences();
+  for (const win of rendererWindows()) win.webContents.send("preferences:changed", value);
+}
+function updateNativeSurfaces() {
+  for (const win of [settingsWindow, characterLibrary?.window]) if (win && !win.isDestroyed()) win.setBackgroundColor(windowBackground());
+}
+function applyPreferences(value, { broadcast = true } = {}) {
+  nativeTheme.themeSource = value.theme;
+  locale = value.resolvedLocale;
+  if (characterLibrary) {
+    const source = characterLibrary.source();
+    selectedCharacter = characterDefinition(source.id, source.profile, source.analysis, undefined, locale);
+  }
+  updateNativeSurfaces();
+  if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.setTitle(t(locale, "settingsTitle", { brand: brand(locale) }));
+  if (characterLibrary?.window && !characterLibrary.window.isDestroyed()) characterLibrary.window.setTitle(t(locale, "libraryTitle", { brand: brand(locale) }));
+  if (tray) rebuildTrayMenu();
+  if (broadcast) {
+    broadcastPreferences();
+    for (const win of [petWindow, gameWindow]) if (win && !win.isDestroyed()) win.webContents.send("character:changed");
+  }
+}
+function setPreference(change) {
+  try {
+    const value = preferencesStore.set(change);
+    applyPreferences(value);
+  } catch {
+    if (Notification.isSupported()) new Notification({ title: brand(locale), body: t(locale, "operationFailed") }).show();
+  }
+}
+
+ipcMain.handle("preferences:get", event => fromRenderer(event) ? { ok: true, value: preferences() } : { ok: false, error: "invalid-renderer" });
 
 function dispatch(type, payload = {}) {
   Object.assign(state, transitionState(state, { type, ...payload }));
@@ -428,6 +470,7 @@ function createGameWindow({ focus = false } = {}) {
     skipTaskbar: true,
     show: false,
     hasShadow: false,
+    title: t(locale, "gameTitle", { brand: brand(locale) }),
     webPreferences,
   });
   gameWindow = win;
@@ -731,8 +774,8 @@ function showApiSettings() {
     height: 510,
     resizable: false,
     maximizable: false,
-    title: "聊天设置 · 呼噜呼噜",
-    backgroundColor: "#fbfcff",
+    title: t(locale, "settingsTitle", { brand: brand(locale) }),
+    backgroundColor: windowBackground(),
     show: false,
     webPreferences: {
       preload: path.join(dirname, "settings-preload.cjs"),
@@ -781,15 +824,15 @@ function rebuildTrayMenu() {
   if (!tray || quitting) return;
   trayMenu = Menu.buildFromTemplate([
     ...[
-      [MODES.DODGE, "Dodge · 自由让路"],
-      [MODES.PET, "Pet · 互动与移动"],
-      [MODES.PACMAN, "Pac-Man · 吃颗豆豆"],
+      [MODES.DODGE, t(locale, "modeDodge")],
+      [MODES.PET, t(locale, "modePet")],
+      [MODES.PACMAN, t(locale, "modePacman")],
     ].map(([value, label]) => ({
       id: value,
       label: value === MODES.PET ? `${label}  ⓘ` : label,
       ...(value === MODES.PET ? {
-        accessibilityLabel: `${label}，有操作说明`,
-        toolTip: "拖动换位置 · 长按抱抱 · 悬停摸头挠肚肚 · 方向键移动",
+        accessibilityLabel: label,
+        toolTip: t(locale, "petHelp"),
       } : {}),
       type: "radio",
       checked: state.mode === value,
@@ -798,28 +841,28 @@ function rebuildTrayMenu() {
     { type: "separator" },
     {
       id: "cycle-mode",
-      label: "切换到下一个模式",
+      label: t(locale, "cycleMode"),
       accelerator: MODE_SHORTCUT,
       registerAccelerator: false,
       click: cycleMode,
     },
     {
       id: "chat",
-      label: "和它说句话",
+      label: t(locale, "chat"),
       accelerator: CHAT_SHORTCUT,
       registerAccelerator: false,
       click: showChat,
     },
     {
       id: "hide",
-      label: state.manualHidden ? "让它回来" : "老板来了，藏好",
+      label: t(locale, state.manualHidden ? "show" : "hide"),
       accelerator: HIDE_SHORTCUT,
       registerAccelerator: false,
       click: toggleHidden,
     },
     {
       id: "recover",
-      label: "找回宠物到当前屏幕",
+      label: t(locale, "recover"),
       click: () => {
         dispatch("reveal");
         pinPet();
@@ -829,15 +872,29 @@ function rebuildTrayMenu() {
     },
     { type: "separator" },
     {
-      label: "登录时自动启动",
+      id: "appearance", label: t(locale, "appearance"), submenu: THEMES.map(theme => ({
+        id: "theme-" + theme, type: "radio", label: t(locale, theme), checked: preferences().theme === theme,
+        click: () => setPreference({ theme }),
+      })),
+    },
+    {
+      id: "language", label: t(locale, "language"), submenu: LOCALE_CHOICES.map(choice => ({
+        id: "locale-" + choice, type: "radio",
+        label: choice === "system" ? t(locale, "localeSystemDetail", { language: t(locale, ({"zh-CN":"langZhCN","zh-TW":"langZhTW",en:"langEn",ja:"langJa",fr:"langFr",de:"langDe",ru:"langRu"})[preferences().resolvedLocale]) }) : t(locale, ({"zh-CN":"langZhCN","zh-TW":"langZhTW",en:"langEn",ja:"langJa",fr:"langFr",de:"langDe",ru:"langRu"})[choice]),
+        checked: preferences().locale === choice, click: () => setPreference({ locale: choice }),
+      })),
+    },
+    { type: "separator" },
+    {
+      label: t(locale, "login"),
       type: "checkbox",
       checked: app.getLoginItemSettings().openAtLogin,
       enabled: app.isPackaged,
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
     },
-    { id: "characters", label: "角色…", click: () => characterLibrary.show() },
-    { id: "api-settings", label: "聊天设置…", click: showApiSettings },
-    { id: "quit", label: "退出呼噜呼噜", click: () => app.quit() },
+    { id: "characters", label: t(locale, "characters"), click: () => characterLibrary.show() },
+    { id: "api-settings", label: t(locale, "chatSettings"), click: showApiSettings },
+    { id: "quit", label: t(locale, "quit", { brand: brand(locale) }), click: () => app.quit() },
   ]);
   trayMenu.on("menu-will-show", () => {
     menuOpen = true;
@@ -847,7 +904,7 @@ function rebuildTrayMenu() {
     menuOpen = false;
   });
   tray.setContextMenu(trayMenu);
-  tray.setToolTip("呼噜呼噜 · " + state.mode);
+  tray.setToolTip(brand(locale) + " · " + state.mode);
   // No tray click callback: opening the menu never reveals or activates the pet.
 }
 function registerShortcut(accelerator, handler, label) {
@@ -861,8 +918,8 @@ function registerShortcut(accelerator, handler, label) {
     console.error(label + "快捷键注册失败：" + accelerator);
     if (Notification.isSupported())
       new Notification({
-        title: "呼噜呼噜快捷键不可用",
-        body: label + "快捷键无效或已被占用，请使用菜单或修改环境变量。",
+        title: t(locale, "shortcutTitle", { brand: brand(locale) }),
+        body: t(locale, "shortcutBody", { action: label }),
       }).show();
   }
 }
@@ -895,6 +952,7 @@ ipcMain.handle("chat:send", (event, prompt) => {
   if (!fromPet(event)) throw new Error("Invalid sender");
   return askClaude(prompt, {
     persona: selectedCharacter.profile.persona,
+    locale,
     provider: () => apiSettingsStore.provider() || loadChatProvider(),
   });
 });
@@ -947,6 +1005,8 @@ export const ready = app.whenReady().then(async () => {
   if (!hasLock) return;
   if (process.platform === "darwin") app.dock.hide();
   Menu.setApplicationMenu(null);
+  preferencesStore = createPreferencesStore({ directory: app.getPath("userData"), systemLanguages: () => app.getPreferredSystemLanguages() });
+  applyPreferences(preferencesStore.get(), { broadcast: false });
   apiSettingsStore = createApiSettingsStore({
     directory: app.getPath("userData"),
     secureStorage: safeStorage,
@@ -963,18 +1023,21 @@ export const ready = app.whenReady().then(async () => {
       })
       : input => analyzeCharacterImage(input, {
         provider: () => apiSettingsStore.provider() || loadChatProvider(),
+        locale,
       }),
     onOpen: () => interruptInteraction({ preserveMotion: true }),
+    locale: () => locale,
+    backgroundColor: windowBackground,
     shouldForceClose: () => quitting,
     onChange: () => {
       const source = characterLibrary.source();
-      selectedCharacter = characterDefinition(source.id, source.profile, source.analysis);
+      selectedCharacter = characterDefinition(source.id, source.profile, source.analysis, undefined, locale);
       for (const win of [petWindow, gameWindow]) if (win && !win.isDestroyed()) win.webContents.send("character:changed");
     },
   });
   {
     const source = characterLibrary.source();
-    selectedCharacter = characterDefinition(source.id, source.profile, source.analysis);
+    selectedCharacter = characterDefinition(source.id, source.profile, source.analysis, undefined, locale);
   }
   pinPet();
   createPetWindow();
@@ -984,9 +1047,10 @@ export const ready = app.whenReady().then(async () => {
   tray = new Tray(trayImage);
   if (trayImage.isEmpty() && process.platform === "darwin") tray.setTitle("宠");
   rebuildTrayMenu();
-  registerShortcut(HIDE_SHORTCUT, toggleHidden, "快速隐藏");
-  registerShortcut(CHAT_SHORTCUT, showChat, "聊天");
-  registerShortcut(MODE_SHORTCUT, cycleMode, "循环切换模式");
+  registerShortcut(HIDE_SHORTCUT, toggleHidden, t(locale, "shortcutHide"));
+  registerShortcut(CHAT_SHORTCUT, showChat, t(locale, "shortcutChat"));
+  registerShortcut(MODE_SHORTCUT, cycleMode, t(locale, "shortcutMode"));
+  nativeTheme.on("updated", updateNativeSurfaces);
   reducedMotion = systemPreferences.getAnimationSettings().prefersReducedMotion;
   // Recovery is independent of rAF: an unexpectedly hidden window stops its
   // renderer clock, but must still be recoverable. Never unhide a manual hide.
@@ -1033,6 +1097,7 @@ export function getRuntime() {
     characterWindow: characterLibrary?.window,
     tray,
     trayMenu,
+    preferences: preferences(),
     menuOpen,
     ignoringMouse,
     hiding: Boolean(hideAnimation),

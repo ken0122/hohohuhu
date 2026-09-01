@@ -17,16 +17,16 @@ FORM: 屏幕遮罩小游戏，方向键是唯一持续操作；固定 staging，
     <link rel="stylesheet" href="hide-effect.css" />
   </head>
   <body>
-    <canvas id="game" aria-label="用方向键操控蓝色单眼宠物吃豆豆"></canvas>
+    <canvas id="game" aria-label="用方向键操控蓝色单眼宠物吃豆豆" data-i18n-aria-label="gameCanvas"></canvas>
     <header class="hud">
       <div class="game-info">
-        <div class="score"><span>收集</span><strong id="score">0</strong></div>
-        <div class="round-status" aria-live="polite">第 <span id="round">1</span> 盘 · <span id="speed">1.00×</span></div>
+        <div class="score"><span data-i18n="collected">收集</span><strong id="score">0</strong></div>
+        <div class="round-status" id="round-status" aria-live="polite">第 1 盘 · 1.00×</div><span id="round" hidden>1</span><span id="speed" hidden>1.00×</span>
         <p class="level-message" id="level-message" aria-live="polite"></p>
       </div>
       <div class="game-controls">
-        <p id="hint"><kbd>↑ ↓ ← →</kbd> 移动</p>
-        <button id="exit" type="button"><kbd>Esc</kbd> 返回桌面</button>
+        <p id="hint"><kbd>↑ ↓ ← →</kbd> <span data-i18n="move">移动</span></p>
+        <button id="exit" type="button"><kbd>Esc</kbd> <span data-i18n="exitDesktop">返回桌面</span></button>
       </div>
     </header>
     <div id="game-pet" class="game-pet"></div>

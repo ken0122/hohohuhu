@@ -3,6 +3,7 @@ import { idleDelay } from "./eye-motion.js";
 import { clickReaction, createInteractionPolicy, createStrokeGesture } from "./pet-interactions.js";
 import { createPetDrag } from "./pet-drag.js";
 import { installHideEffect } from "./hide-effect.js";
+import { appBrand, installLocalization, localizeDocument, tr } from "./localize.js";
 const body = document.body;
 const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message");
@@ -23,9 +24,9 @@ const affectionSymbols = Array.from(document.querySelectorAll(".affection span")
 function applyCharacterPresentation() {
   const { id, affection, profile } = character.definition;
   body.dataset.character = id;
-  const identity = profile?.persona?.identity || "桌面宠物";
+  const identity = profile?.persona?.identity || tr("petA11y");
   document.querySelector(".desktop-pet")?.setAttribute("aria-label", identity);
-  pet.setAttribute("aria-label", `和${identity}互动`);
+  pet.setAttribute("aria-label", tr("interactA11y", { name: identity }));
   affectionSymbols.forEach((symbol, index) => { symbol.textContent = affection.symbols[index]; });
   body.style.setProperty("--affection-color", affection.color);
   body.style.setProperty("--affection-shadow", affection.shadow);
@@ -33,7 +34,7 @@ function applyCharacterPresentation() {
 applyCharacterPresentation();
 characterHost.addEventListener("character-mounted", applyCharacterPresentation);
 window.addEventListener("pagehide", () => { setHint(); character.destroy(); }, { once: true });
-let mode = "dodge", chatOpen = false, near = false, pending = false;
+let mode = "dodge", chatOpen = false, near = false, pending = false, replyState = "prompt";
 let reactionTimer, hoverTimer, lastReaction = 0;
 let moving = false, holdTimer, pressPoint, suppressClick = false;
 const gesture = createStrokeGesture({ getParts: () => character.definition.interactionParts || [] });
@@ -173,14 +174,14 @@ form.addEventListener("submit", async event => {
   const message = input.value.trim();
   if (!message || pending) return;
   pending = true; body.classList.add("is-thinking");
-  status.textContent = "听见啦"; reply.textContent = "正在悄悄回你…";
+  replyState = "waiting"; status.textContent = tr("heard"); reply.textContent = tr("chatWaiting");
   input.disabled = true; sendButton.disabled = true;
   try {
-    reply.textContent = await window.bluepet.sendChat(message);
-    status.textContent = "只告诉你"; input.value = "";
+    reply.textContent = await window.bluepet.sendChat(message); replyState = "reply";
+    status.textContent = tr("privateReply"); input.value = "";
   } catch {
-    status.textContent = "没接住";
-    reply.textContent = "暂时没连上，请检查网络和本机 DeepSeek 配置后再试。";
+    replyState = "error"; status.textContent = tr("missed");
+    reply.textContent = tr("chatFailed");
   } finally {
     pending = false; body.classList.remove("is-thinking");
     input.disabled = false; sendButton.disabled = false;
@@ -236,4 +237,15 @@ pet.addEventListener("pointermove", event => {
   }
   const kind = gesture.move(x, y, performance.now());
   if (kind) react(kind);
+});
+
+await installLocalization(() => {
+  localizeDocument();
+  document.title = appBrand();
+  if (replyState === "prompt") reply.textContent = tr("petPrompt");
+  if (replyState === "waiting") { status.textContent = tr("heard"); reply.textContent = tr("chatWaiting"); }
+  if (replyState === "reply") status.textContent = tr("privateReply");
+  if (replyState === "error") { status.textContent = tr("missed"); reply.textContent = tr("chatFailed"); }
+  applyCharacterPresentation();
+  character.reload().then(applyCharacterPresentation).catch(() => {});
 });

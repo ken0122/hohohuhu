@@ -1,4 +1,5 @@
 import { BASIC_PROFILE, BLACK_CAT_PROFILE, BLUE_ONE_EYE_PROFILE, SUNNY_YELLOW_PROFILE, validateCharacterProfile } from "./character-profile.js";
+import { localizedBuiltinProfile } from "./localized-profiles.js";
 
 // App-owned bindings, not an import format. Untrusted artwork/metadata must be
 // validated by a future importer before it can reach the renderer.
@@ -19,8 +20,9 @@ export const BLUE_ONE_EYE = Object.freeze({
   }),
 });
 
-// Minimal binding for a trusted static SVG: no assumed eyes, limbs or body path.
-// Generic motion transforms the whole image; it does not invent anatomy.
+// Minimal binding for a trusted static SVG: no assumed eyes or selectors. The
+// renderer may derive a lower-outline gait from a suitable path, but never
+// persists that derivative or invents limbs.
 export const BASIC_SVG = Object.freeze({
   id: "basic-svg",
   parts: Object.freeze({ root: null }),
@@ -31,7 +33,7 @@ export const BASIC_SVG = Object.freeze({
     symbols: Object.freeze(["✦", "·", "✦"]), color: "#f4f1e8",
     shadow: "0 1px 3px rgba(17, 17, 17, .78), 0 2px 7px rgba(17, 17, 17, .28)",
   }),
-  gait: Object.freeze({ kind: "transform", walkDuration: 680, runDuration: 220 }),
+  gait: Object.freeze({ kind: "auto", walkDuration: 680, runDuration: 220 }),
 });
 
 // Trusted runtime decoration for the built-in cat. The converted source remains
@@ -43,6 +45,10 @@ export const BLACK_CAT = Object.freeze({
   parts: Object.freeze({ root: null, pupil: ".cat-pupils" }),
   gaze: Object.freeze({ x: 22 / 64, y: 29.5 / 64, radius: 1.15, offsetX: 0, offsetY: 0 }),
   profile: BLACK_CAT_PROFILE,
+  interactionParts: Object.freeze([
+    Object.freeze({ kind: "body", confidence: 1, box: Object.freeze([.06, .12, .55, .82]) }),
+    Object.freeze({ kind: "tail", confidence: 1, box: Object.freeze([.58, .65, .36, .26]) }),
+  ]),
   overlays: Object.freeze([Object.freeze({
     tag: "g", attributes: Object.freeze({ class: "cat-pupils", fill: "#111111", "aria-hidden": "true" }),
     children: Object.freeze([
@@ -134,10 +140,10 @@ function importedEyeRig(parts = [], detected) {
   };
 }
 
-export function characterDefinition(id, profile, analysis, detectedEyeRig) {
-  if (id === BLUE_ONE_EYE.id) return BLUE_ONE_EYE;
-  if (id === BLACK_CAT.id) return BLACK_CAT;
-  if (id === SUNNY_YELLOW.id) return SUNNY_YELLOW;
+export function characterDefinition(id, profile, analysis, detectedEyeRig, locale) {
+  if (id === BLUE_ONE_EYE.id) return locale ? { ...BLUE_ONE_EYE, profile: localizedBuiltinProfile(id, BLUE_ONE_EYE.profile, locale) } : BLUE_ONE_EYE;
+  if (id === BLACK_CAT.id) return locale ? { ...BLACK_CAT, profile: localizedBuiltinProfile(id, BLACK_CAT.profile, locale) } : BLACK_CAT;
+  if (id === SUNNY_YELLOW.id) return locale ? { ...SUNNY_YELLOW, profile: localizedBuiltinProfile(id, SUNNY_YELLOW.profile, locale) } : SUNNY_YELLOW;
   const rig = importedEyeRig(analysis?.parts, detectedEyeRig);
   return {
     ...BASIC_SVG,

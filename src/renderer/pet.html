@@ -12,25 +12,26 @@ FORM: 桌面活物而非应用窗口；固定 staging，无随机方向 seed。
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>呼噜呼噜</title>
+    <link rel="stylesheet" href="theme.css" />
     <link rel="stylesheet" href="pet.css" />
     <link rel="stylesheet" href="mascot.css" />
     <link rel="stylesheet" href="hide-effect.css" />
   </head>
   <body data-mode="dodge">
-    <main class="desktop-pet" aria-label="蓝色单眼桌面宠物">
+    <main class="desktop-pet" aria-label="蓝色单眼桌面宠物" data-i18n-aria-label="petA11y">
       <section class="speech" aria-hidden="true" inert>
         <div class="speech__response" aria-live="polite">
-          <span class="speech__status">我在听</span>
+          <span class="speech__status" data-i18n="petListening">我在听</span>
           <p id="reply">悄悄说吧，我会小声回答。</p>
         </div>
         <form id="chat-form" class="speech__form">
-          <label class="sr-only" for="message">和桌面宠物聊天</label>
-          <input id="message" name="message" maxlength="500" autocomplete="off" placeholder="和它说句话…" />
-          <button type="submit" aria-label="发送消息">
+          <label class="sr-only" for="message" data-i18n="petInputLabel">和桌面宠物聊天</label>
+          <input id="message" name="message" maxlength="500" autocomplete="off" placeholder="和它说句话…" data-i18n-placeholder="petPlaceholder" />
+          <button type="submit" aria-label="发送消息" data-i18n-aria-label="send">
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 15V5m-5 5 5-5 5 5"/></svg>
           </button>
         </form>
-        <button id="dismiss" class="speech__dismiss" type="button" aria-label="关闭聊天">Esc</button>
+        <button id="dismiss" class="speech__dismiss" type="button" aria-label="关闭聊天" data-i18n-aria-label="closeChat">Esc</button>
       </section>
 
       <div class="affection" aria-hidden="true">

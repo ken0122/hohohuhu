@@ -5,53 +5,54 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; worker-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'" />
   <title>角色库 · 呼噜呼噜</title>
+  <link rel="stylesheet" href="theme.css" />
   <link rel="stylesheet" href="mascot.css" />
   <link rel="stylesheet" href="character-library.css" />
   <script type="module" src="character-library.js"></script>
 </head>
 <body>
-  <header><h1>角色</h1><button id="choose">添加角色…</button></header>
+  <header><h1 data-i18n="libraryHeading">角色</h1><button id="choose">添加角色…</button></header>
   <main>
-    <nav aria-label="角色列表"><div id="catalog"></div></nav>
-    <section class="detail" aria-label="角色预览">
+    <nav aria-label="角色列表" data-i18n-aria-label="characterList"><div id="catalog"></div></nav>
+    <section class="detail" aria-label="角色预览" data-i18n-aria-label="characterPreview">
       <div class="detail-heading"><h2 id="name">正在加载…</h2><p id="selection-status" class="selection-status">正在读取当前角色…</p></div>
       <div class="stage">
-        <figure id="original" hidden><span id="original-slot"></span><figcaption>原图</figcaption></figure>
-        <figure><div id="large" class="character-host"></div><figcaption id="art-caption" hidden>处理后</figcaption></figure>
+        <figure id="original" hidden><span id="original-slot"></span><figcaption data-i18n="original">原图</figcaption></figure>
+        <figure><div id="large" class="character-host"></div><figcaption id="art-caption" hidden data-i18n="processed">处理后</figcaption></figure>
       </div>
       <div id="draft-fields" hidden>
-        <label for="character-name">角色名称</label><input id="character-name" maxlength="40" autocomplete="off" />
-        <section id="analysis-editor" aria-label="修正角色分析">
+        <label for="character-name" data-i18n="characterName">角色名称</label><input id="character-name" maxlength="40" autocomplete="off" />
+        <section id="analysis-editor" aria-label="修正角色分析" data-i18n-aria-label="fixAnalysis">
           <div class="analysis-heading"><strong id="quality-label"></strong><span id="quality-explanation"></span></div>
           <div class="analysis-grid">
-            <label>角色身份<input id="persona-identity" maxlength="40" /></label>
-            <label>性格类型<select id="persona-archetype"><option value="shy">害羞</option><option value="proud">傲娇</option><option value="cheerful">开朗</option><option value="calm">沉稳</option><option value="curious">好奇</option><option value="mischievous">调皮</option></select></label>
-            <label>说话方式<select id="persona-voice"><option value="soft">柔软</option><option value="reserved">克制</option><option value="bright">明快</option><option value="steady">平静</option><option value="curious">好奇</option><option value="playful">俏皮</option></select></label>
-            <label class="wide">气质说明<input id="persona-summary" maxlength="80" /></label>
-            <label class="wide">性格特点<input id="persona-traits" maxlength="51" placeholder="用逗号分隔，最多 4 个" /></label>
+            <label><span data-i18n="identity">角色身份</span><input id="persona-identity" maxlength="40" /></label>
+            <label><span data-i18n="archetype">性格类型</span><select id="persona-archetype"><option value="shy">害羞</option><option value="proud">傲娇</option><option value="cheerful">开朗</option><option value="calm">沉稳</option><option value="curious">好奇</option><option value="mischievous">调皮</option></select></label>
+            <label><span data-i18n="voice">说话方式</span><select id="persona-voice"><option value="soft">柔软</option><option value="reserved">克制</option><option value="bright">明快</option><option value="steady">平静</option><option value="curious">好奇</option><option value="playful">俏皮</option></select></label>
+            <label class="wide"><span data-i18n="summary">气质说明</span><input id="persona-summary" maxlength="80" /></label>
+            <label class="wide"><span data-i18n="traits">性格特点</span><input id="persona-traits" maxlength="51" placeholder="用逗号分隔，最多 4 个" data-i18n-placeholder="traitsPlaceholder" /></label>
           </div>
-          <div class="dialogue-heading"><strong>互动台词</strong><span>每项 1–4 句，用“｜”分隔</span></div>
+          <div class="dialogue-heading"><strong data-i18n="dialogue">互动台词</strong><span data-i18n="dialogueHint">每项 1–4 句，用“｜”分隔</span></div>
           <div id="dialogue-list" class="dialogue-grid"></div>
           <div class="egg-grid">
-            <label>彩蛋名称<input id="egg-label" maxlength="24" /></label>
-            <label>触发互动<select id="egg-trigger"><option value="headpat">摸头</option><option value="tickle">挠痒</option><option value="poke">戳一戳</option><option value="cuddle">抱抱</option><option value="nuzzle">贴贴</option><option value="hop">点击脸部</option><option value="shy">点击头部</option></select></label>
-            <label class="wide">彩蛋说明<input id="egg-description" maxlength="80" /></label>
-            <label class="wide">彩蛋短句<input id="egg-message" maxlength="50" /></label>
+            <label><span data-i18n="eggName">彩蛋名称</span><input id="egg-label" maxlength="24" /></label>
+            <label><span data-i18n="eggTrigger">触发互动</span><select id="egg-trigger"><option value="headpat">摸头</option><option value="tickle">挠痒</option><option value="poke">戳一戳</option><option value="cuddle">抱抱</option><option value="nuzzle">贴贴</option><option value="hop">点击脸部</option><option value="shy">点击头部</option></select></label>
+            <label class="wide"><span data-i18n="eggDescription">彩蛋说明</span><input id="egg-description" maxlength="80" /></label>
+            <label class="wide"><span data-i18n="eggLine">彩蛋短句</span><input id="egg-message" maxlength="50" /></label>
           </div>
-          <div class="parts-heading"><strong>互动部件</strong><button id="add-part" type="button">添加部件</button></div>
+          <div class="parts-heading"><strong data-i18n="parts">互动部件</strong><button id="add-part" type="button" data-i18n="addPart">添加部件</button></div>
           <div id="parts-list"></div>
-          <p>坐标范围为 0–1。</p>
+          <p data-i18n="coordinates">坐标范围为 0–1。</p>
         </section>
       </div>
-      <div class="profile-summary" aria-label="角色气质与彩蛋"><p id="personality"></p><p id="easter-egg"></p></div>
+      <div class="profile-summary" aria-label="角色气质与彩蛋" data-i18n-aria-label="personalityEgg"><p id="personality"></p><p id="easter-egg"></p></div>
       <div class="preview-tools">
-        <div class="sizes" aria-label="实际尺寸"><div><div id="desktop" class="character-host"></div><span>桌面</span></div><div><div id="game" class="character-host"></div><span>游戏</span></div><p id="capabilities" class="visually-hidden">形象与动作独立控制。</p></div>
-        <fieldset id="motions" disabled><legend>动作</legend><div class="motion-row"><div class="gait-group" role="group" aria-label="步态"><button data-gait="idle" aria-pressed="true">静止</button><button data-gait="walk" aria-pressed="false">行走</button><button data-gait="run" aria-pressed="false">奔跑</button></div><div class="motion-secondary"><button data-reaction="hop">轻跳</button><button id="egg-preview">彩蛋</button><button id="pause" aria-pressed="false">暂停</button></div></div></fieldset>
+        <div class="sizes" aria-label="实际尺寸" data-i18n-aria-label="actualSizes"><div><div id="desktop" class="character-host"></div><span data-i18n="desktop">桌面</span></div><div><div id="game" class="character-host"></div><span data-i18n="game">游戏</span></div><p id="capabilities" class="visually-hidden">形象与动作独立控制。</p></div>
+        <fieldset id="motions" disabled><legend data-i18n="motions">动作</legend><div class="motion-row"><div class="gait-group" role="group" aria-label="步态" data-i18n-aria-label="gait"><button data-gait="idle" aria-pressed="true" data-i18n="idle">静止</button><button data-gait="walk" aria-pressed="false" data-i18n="walk">行走</button><button data-gait="run" aria-pressed="false" data-i18n="run">奔跑</button></div><div class="motion-secondary"><button data-reaction="hop" data-i18n="hop">轻跳</button><button id="egg-preview" data-i18n="easterEgg">彩蛋</button><button id="pause" aria-pressed="false">暂停</button></div></div></fieldset>
       </div>
       <p id="motion-status" class="visually-hidden" aria-live="polite"></p>
-      <div class="detail-meta"><p id="status" role="status" aria-live="polite"></p><div class="manage-actions"><button id="edit" hidden>编辑</button><button id="remove" class="danger" hidden>删除…</button></div></div>
+      <div class="detail-meta"><p id="status" role="status" aria-live="polite"></p><div class="manage-actions"><button id="edit" hidden data-i18n="edit">编辑</button><button id="remove" class="danger" hidden data-i18n="remove">删除…</button></div></div>
     </section>
   </main>
-  <footer><div class="actions"><button id="cancel" hidden>取消</button><button id="close">关闭</button><button id="apply" class="primary" disabled>使用角色</button></div></footer>
+  <footer><div class="actions"><button id="cancel" hidden>取消</button><button id="close" data-i18n="close">关闭</button><button id="apply" class="primary" disabled>使用角色</button></div></footer>
 </body>
 </html>

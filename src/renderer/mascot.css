@@ -22,7 +22,7 @@
 .mascot-svg.character-root[data-reaction="cuddle"] { transform-origin: var(--body-origin-x) var(--body-origin-y); }
 /* A cursor target changes every frame; tweening it repeatedly leaves the eye lagging. */
 .mascot-svg[data-cursor-gaze="true"] .character-pupil { transition: none; }
-/* Walking/running affects only the single original body path, never layers. */
+/* Walking/running owns its runtime gait target; reactions stay on the root. */
 .mascot-svg[data-gait="walk"] .character-root,
 .mascot-svg[data-gait="run"] .character-root { animation: none; }
 .mascot-svg[data-reaction="nuzzle"] .character-root, .mascot-svg.character-root[data-reaction="nuzzle"] { animation: nuzzle 1.1s ease-in-out; }

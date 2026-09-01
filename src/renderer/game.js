@@ -1,6 +1,8 @@
 import { createMascot } from "./mascot.js";
 import { createGame, resizeGame, updateGame, GAME_HUD_HEIGHT } from "./game-state.js";
 import { installHideEffect } from "./hide-effect.js";
+import { formatNumber } from "../i18n.js";
+import { appBrand, installLocalization, locale, localizeDocument, tr } from "./localize.js";
 const canvas = document.querySelector("#game");
 const context = canvas.getContext("2d");
 const spriteHost = document.querySelector("#game-pet");
@@ -14,6 +16,7 @@ const exitButton = document.querySelector("#exit");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 export const game = createGame(window.innerWidth, window.innerHeight);
 const pet = game.pet;
+const roundStatus = document.querySelector("#round-status");
 const roundElement = document.querySelector("#round");
 const speedElement = document.querySelector("#speed");
 document.documentElement.style.setProperty("--game-hud-height", `${GAME_HUD_HEIGHT}px`);
@@ -35,6 +38,16 @@ function showLevelMessage(text) {
   requestAnimationFrame(() => levelMessage.classList.add("show"));
 }
 
+function renderScore() {
+  scoreElement.textContent = formatNumber(locale(), game.score);
+  roundElement.textContent = String(game.level);
+  speedElement.textContent = (pet.speed / 280).toFixed(2) + "×";
+  roundStatus.textContent = tr("round", {
+    round: formatNumber(locale(), game.level),
+    speed: formatNumber(locale(), pet.speed / 280, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "×",
+  });
+}
+
 function handleKey(event) {
   if (hideEffect.active) return;
   const directions = {
@@ -54,11 +67,10 @@ function handleKey(event) {
 
 function update(dt) {
   if (updateGame(game, dt, window.innerWidth, window.innerHeight)) {
-    roundElement.textContent = game.level;
-    speedElement.textContent = (pet.speed / 280).toFixed(2) + "×";
-    showLevelMessage("下一盘 · 速度 ×1.3");
+    renderScore();
+    showLevelMessage(tr("nextRound"));
   }
-  scoreElement.textContent = game.score;
+  scoreElement.textContent = formatNumber(locale(), game.score);
 }
 
 function draw(time) {
@@ -101,5 +113,11 @@ window.addEventListener("keydown", handleKey);
 window.addEventListener("pointermove", event => { pointer = { x: event.clientX, y: event.clientY }; });
 exitButton.addEventListener("click", () => window.bluepet.exitGame());
 resize();
-showLevelMessage("慢慢来，沿着豆豆走。");
+await installLocalization(() => {
+  localizeDocument();
+  document.title = tr("gameTitle", { brand: appBrand() });
+  renderScore();
+  sprite.reload().catch(() => {});
+});
+showLevelMessage(tr("gameStart"));
 requestAnimationFrame(frame);

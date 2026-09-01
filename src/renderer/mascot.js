@@ -2,6 +2,7 @@ import { characterDefinition } from "../characters.js";
 import { validateGeneratedSvg } from "../character-import.js";
 import { mountCharacter } from "./character.js";
 import { deriveImportedEyeRig } from "./imported-eye-rig.js";
+import { locale } from "./localize.js";
 
 // Stable facade: swapping artwork never reloads the game/chat or native window.
 export async function createMascot(host, { eyelids = true } = {}) {
@@ -13,7 +14,7 @@ export async function createMascot(host, { eyelids = true } = {}) {
     if (!entry.builtin) validateGeneratedSvg(entry.svg);
     const eyeRig = entry.builtin ? null : await deriveImportedEyeRig(entry.svg, entry.analysis?.parts);
     if (destroyed || version !== serial) return;
-    const definition = characterDefinition(entry.id, entry.profile, entry.analysis, eyeRig);
+    const definition = characterDefinition(entry.id, entry.profile, entry.analysis, eyeRig, locale());
     const parsed = new DOMParser().parseFromString(entry.svg, "image/svg+xml");
     if (parsed.querySelector("parsererror")) throw new Error("Invalid character SVG");
     const svg = document.importNode(parsed.documentElement, true);
@@ -33,6 +34,7 @@ export async function createMascot(host, { eyelids = true } = {}) {
     motion(value = {}) { motion = value; current.motion(value); },
     react(value) { reaction = value; current.react(value); },
     reset() { motion = {}; reaction = undefined; current.reset(); },
+    reload,
     destroy() { destroyed = true; ++serial; unsubscribe(); current?.destroy(); },
   };
 }
