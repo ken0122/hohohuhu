@@ -15,8 +15,11 @@ function render(value) {
   apiKey.required = !configured;
   clear.disabled = !configured;
 }
-async function perform(action, success) {
+async function perform(action, pending, success) {
   fields.disabled = true;
+  document.body.setAttribute("aria-busy", "true");
+  status.dataset.error = "false";
+  status.textContent = pending;
   try {
     const result = await action();
     if (!result.ok) throw new Error(result.error);
@@ -26,18 +29,20 @@ async function perform(action, success) {
   } catch (error) {
     status.dataset.error = "true";
     status.textContent = localizedError(error, "settingsOperationFailed");
-    clear.disabled = false;
-  } finally { fields.disabled = false; }
+    clear.disabled = !configured;
+  } finally {
+    fields.disabled = false;
+    document.body.setAttribute("aria-busy", "false");
+  }
 }
 form.addEventListener("submit", event => {
   event.preventDefault();
   const value = { baseUrl: baseUrl.value, apiKey: apiKey.value };
-  apiKey.value = "";
-  perform(() => window.apiSettings.save(value), tr("savedChat"));
+  perform(() => window.apiSettings.save(value), tr("savingChat"), tr("savedChat"));
 });
 clear.addEventListener("click", () => {
   if (window.confirm(tr("clearConfirm")))
-    perform(() => window.apiSettings.clear(), tr("clearedChat"));
+    perform(() => window.apiSettings.clear(), tr("clearingChat"), tr("clearedChat"));
 });
 document.querySelector("#cancel").addEventListener("click", () => window.apiSettings.close());
 document.addEventListener("keydown", event => { if (event.key === "Escape") window.apiSettings.close(); });
@@ -46,4 +51,4 @@ await installLocalization(() => {
   document.title = tr("settingsTitle", { brand: appBrand() });
   if (baseUrl.value) render({ configured, baseUrl: baseUrl.value });
 });
-perform(() => window.apiSettings.load());
+perform(() => window.apiSettings.load(), tr("loading"));

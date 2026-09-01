@@ -1,6 +1,6 @@
 {
   "name": "blue-one-eye-pet",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "A shy one-eyed desktop pet that dodges, cuddles, chats, and plays Pac-Man.",
   "type": "module",
   "main": "src/main.js",

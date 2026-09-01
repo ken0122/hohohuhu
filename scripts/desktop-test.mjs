@@ -466,6 +466,8 @@ try {
     await until(() => js("document.querySelector('#api-key').selectionEnd === 14 && document.querySelector('#api-key').selectionStart === 0"));
     await js("document.querySelector('#base-url').value='https://evil.test'; document.querySelector('#api-key').value='desktop-fake-key'; document.querySelector('form').requestSubmit()");
     await until(() => js("document.querySelector('#status').dataset.error === 'true'"));
+    assert.equal(await js("document.querySelector('#api-key').value"), "desktop-fake-key", "保存失败时不能清空待修正的密钥");
+    assert.equal(await js("document.body.getAttribute('aria-busy')"), "false");
     await js("document.querySelector('#base-url').value='https://api.deepseek.com/anthropic'; document.querySelector('#api-key').value='desktop-fake-key'; document.querySelector('form').requestSubmit()");
     await until(() => js("document.querySelector('#status').textContent.includes('已保存，下次聊天生效')"));
     assert.equal(await js("document.querySelector('#api-key').value"), "");

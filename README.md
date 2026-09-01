@@ -6,7 +6,7 @@
 
 显示名称为「呼噜呼噜」；npm 包名 `blue-one-eye-pet`、命令 `bluepet` 与应用标识保持兼容。
 
-当前版本 **0.4.4** · **macOS** · **MIT** · Electron + 原生 JavaScript
+当前版本 **0.4.5** · **macOS** · **MIT** · Electron + 原生 JavaScript
 
 ## 安装与启动
 
@@ -26,7 +26,7 @@
 需要 **Node.js 22.12+**、npm，以及首次安装时下载 Electron 的网络连接。下载 `.tgz` 后，在其所在目录执行：
 
 ```bash
-npm install -g ./blue-one-eye-pet-0.4.4.tgz
+npm install -g ./blue-one-eye-pet-0.4.5.tgz
 bluepet
 ```
 
@@ -223,13 +223,13 @@ npm run release:mac
 
 命令先检查 `package.json` 与 `package-lock.json` 的版本一致性、差异格式并运行单测，再生成**当前 Node 运行架构**的产物；README 版本号仍需人工同步核对。Apple Silicon 请使用 arm64 Node；Intel 使用 x64 Node。已有本机交付验证范围为 arm64，具体以对应产物的 `RELEASE.md` 和验收记录为准。
 
-每次创建独立的 `outputs/releases/v0.4.4-mac-<arch>-<随机后缀>/`，不覆盖旧包：
+每次创建独立的 `outputs/releases/v0.4.5-mac-<arch>-<随机后缀>/`，不覆盖旧包：
 
 | 文件 | 用途 |
 | --- | --- |
-| `呼噜呼噜-0.4.4-mac-<arch>-unsigned.dmg` | 拖入 Applications 安装 |
-| `呼噜呼噜-0.4.4-mac-<arch>-unsigned.zip` | 解压即得应用 |
-| `blue-one-eye-pet-0.4.4.tgz` | npm 命令行安装 |
+| `呼噜呼噜-0.4.5-mac-<arch>-unsigned.dmg` | 拖入 Applications 安装 |
+| `呼噜呼噜-0.4.5-mac-<arch>-unsigned.zip` | 解压即得应用 |
+| `blue-one-eye-pet-0.4.5.tgz` | npm 命令行安装 |
 | `SHA256SUMS` | 三个安装包的 SHA-256 校验值 |
 | `RELEASE.md` | 基础提交、未提交状态、构建范围与安装说明 |
 | `README.md` / `AGENTS.md` / `LICENSE` | 使用手册、协作指南与 MIT 协议副本 |

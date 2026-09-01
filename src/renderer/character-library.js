@@ -26,6 +26,8 @@ function controls() {
   $("#choose").textContent = tr(importing ? "changeImage" : "addCharacter");
   $("#character-name").disabled = busy;
   document.body.setAttribute("aria-busy", String(busy));
+  $("#draft-fields").inert = busy;
+  $("#draft-fields").setAttribute("aria-busy", String(busy));
 }
 async function operation(fn) {
   if (busy) return;

@@ -9,6 +9,8 @@ colors:
   settings-warning: "#8a5a12"
   blue: "#4569df"
   blue-dark: "#2949b6"
+  blue-active: "#203b94"
+  focus-ring: "#4569df"
   ink: "#17234b"
   muted: "#67749a"
   ground: "rgba(25, 43, 98, .18)"
@@ -81,6 +83,8 @@ components:
     size: "32px"
   send-button-hover:
     backgroundColor: "{colors.blue-dark}"
+  send-button-active:
+    backgroundColor: "{colors.blue-active}"
   dismiss-button:
     backgroundColor: "transparent"
     textColor: "{colors.muted}"
@@ -193,7 +197,9 @@ components:
 
 ### Input & Buttons
 
-输入聚焦时浅化背景并显示品牌蓝内描边。聊天气泡与聊天设置窗口共用原生编辑快捷键处理，支持全选、复制、粘贴、剪切、撤销和重做。发送使用向上箭头图标，hover 加深、键盘聚焦显示外轮廓；禁用时降低不透明度。Esc 是气泡右上方的轻量关闭按钮。游戏退出按钮保留清楚的文字动作与焦点轮廓。
+输入与按钮遵循同一套状态顺序：默认 → hover → pressed → focus-visible → disabled / busy。输入 hover 只改变底色，聚焦时使用 `field-focus` 和 2px `focus-ring`；键盘焦点始终可见，不能用 hover 代替。按钮按下时只下移 1px 并使用 active 色，不增加弹跳或阴影；禁用态保持原组件色相、统一降至 50% 不透明度，同时取消 hover 与 pressed 反馈。浅色和深色主按钮分别使用语义化 `primary / primary-hover / primary-active / on-primary`，管理窗口不得直接写死浅色按钮色。
+
+聊天气泡与聊天设置窗口共用原生编辑快捷键处理，支持全选、复制、粘贴、剪切、撤销和重做。发送使用向上箭头图标，Esc 是气泡右上方的轻量关闭按钮；游戏退出按钮保留清楚的文字动作。异步操作期间，窗口根节点声明 `aria-busy`，状态区立即播报正在执行的动作，并禁用会改变同一份数据的控件。失败后保留用户刚输入的内容与可恢复操作，不能为了清理敏感字段而让用户重新输入；只有保存成功后才清空新密钥。角色保存期间整个草稿编辑区设为 inert，避免界面继续变化却未进入本次保存。
 
 ### Game Canvas & HUD
 
