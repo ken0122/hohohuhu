@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {askClaude, chatSystemPrompt} from "../src/chat.js";
-import {messagesUrl, providerFromEnvironment} from "../src/chat-provider.js";
+import {loadChatProvider, messagesUrl, PROVIDER_NOT_CONFIGURED, providerFromEnvironment} from "../src/chat-provider.js";
 import { BLACK_CAT_PROFILE } from "../src/character-profile.js";
 const provider=async()=>({url:"https://models.example/v1/messages",key:"test-only-key",model:"chat-model",visionModel:"vision-model"});
 test("chat uses the configured model without provider-specific fields or tools",async()=>{
@@ -26,13 +26,18 @@ test("chat prompt follows the selected trusted character persona", async () => {
     return Response.json({ content: [{ type: "text", text: "……你好。" }] });
   }});
 });
-test("generic provider accepts HTTPS bases and only reads BLUEPET variables",()=>{
+test("generic provider accepts HTTPS bases and only reads BLUEPET variables",async()=>{
   assert.equal(messagesUrl("https://models.example/anthropic"),"https://models.example/anthropic/v1/messages");
   assert.equal(messagesUrl("https://models.example/v1/messages"),"https://models.example/v1/messages");
   for(const base of ["http://models.example","https://user@models.example","https://models.example/?token=x"])
     assert.throws(()=>messagesUrl(base));
   assert.equal(providerFromEnvironment({ANTHROPIC_BASE_URL:"https://ignored.example",ANTHROPIC_API_KEY:"ignored"}),undefined);
   assert.equal(providerFromEnvironment({BLUEPET_API_BASE_URL:"https://models.example",BLUEPET_API_KEY:"test-only",BLUEPET_CHAT_MODEL:"chat-model"}).model,"chat-model");
+  await assert.rejects(loadChatProvider({env:{}}), error => {
+    assert.equal(error.code, PROVIDER_NOT_CONFIGURED);
+    assert.equal(error.message, "请先前往聊天设置添加兼容接口");
+    return true;
+  });
 });
 test("chat validates input and handles auth, rate limits and timeouts without raw provider errors",async()=>{
   await assert.rejects(askClaude("  ",{provider}),/悄悄/);
@@ -82,4 +87,13 @@ test("API settings validate URLs and securely persist without returning keys", a
     assert.equal(reopened.provider(), undefined);
     assert.throws(() => reopened.save({ ...value, apiKey: "" }), /API Key/);
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('Messages URLs accept root, version base and full endpoint without duplicating v1', () => {
+  for (const prefix of ['', '/anthropic']) {
+    const expected = `https://models.example${prefix}/v1/messages`;
+    for (const suffix of ['', '/', '/v1', '/v1/', '/v1/messages', '/v1/messages/']) {
+      assert.equal(messagesUrl(`https://models.example${prefix}${suffix}`), expected);
+    }
+  }
 });

@@ -73,7 +73,10 @@ export function validateCharacterProfile(value) {
     easterEgg: Object.freeze({
       id: boundedText(egg.id, "彩蛋 ID", 32),
       label: boundedText(egg.label, "彩蛋名称", 24),
-      description: boundedText(egg.description, "彩蛋说明", 80),
+      // Source generation remains capped at 80 by character-analysis. Runtime
+      // profiles also consume reviewed localized descriptions, which may use
+      // the documented 120-unit translation allowance.
+      description: boundedText(egg.description, "彩蛋说明", 120),
       trigger: Object.freeze({ intent: egg.trigger.intent, count: egg.trigger.count, windowMs: egg.trigger.windowMs }),
       reaction: recipe(egg.reaction, "彩蛋反馈"),
     }),

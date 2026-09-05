@@ -1,11 +1,12 @@
 import { brand, t } from "../i18n.js";
+import { characterErrorMessage } from "../character-errors.js";
 
 let current = { theme: "system", resolvedLocale: "en" };
 const listeners = new Set();
 export const locale = () => current.resolvedLocale;
 export const tr = (key, params) => t(locale(), key, params);
 export const appBrand = () => brand(locale());
-export const localizedError = (error, key = "operationFailed") => locale().startsWith("zh") && error?.message ? error.message : tr(key);
+export const localizedError = (error, key = "operationFailed") => characterErrorMessage(locale(), error) || (locale().startsWith("zh") && error?.message ? error.message : tr(key));
 
 export function localizeDocument(root = document) {
   document.documentElement.lang = locale();

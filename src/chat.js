@@ -1,6 +1,7 @@
 import { cleanClaudeReply } from "./core.js";
 import { loadChatProvider } from "./chat-provider.js";
 import { BLUE_ONE_EYE_PROFILE } from "./character-profile.js";
+import { REMINDER_PROTOCOL, parseReminderIntent } from "./reminder-intent.js";
 
 const VOICE = Object.freeze({
   soft: "语气柔软、亲昵、稍微害羞",
@@ -25,7 +26,7 @@ export function chatSystemPrompt(persona = BLUE_ONE_EYE_PROFILE.persona, { local
     : `Character identity: ${persona.identity}. Character summary: ${persona.summary}. Traits: ${persona.traits.join(", ")}. `;
   return introduction + (INSTRUCTION[locale] || INSTRUCTION.en);
 }
-export async function askClaude(prompt,{provider=loadChatProvider,request=fetch,persona=BLUE_ONE_EYE_PROFILE.persona,locale="zh-CN"}={}) {
+export async function askClaude(prompt,{provider=loadChatProvider,request=fetch,persona=BLUE_ONE_EYE_PROFILE.persona,locale="zh-CN",reminderContext}={}) {
   const safePrompt=String(prompt).trim().slice(0,500);
   if(!safePrompt)throw new Error("悄悄说点什么吧。");
   const {url,key,model}=await provider();
@@ -35,7 +36,7 @@ export async function askClaude(prompt,{provider=loadChatProvider,request=fetch,
       method:"POST",redirect:"error",signal:AbortSignal.timeout(15000),
       headers:{"content-type":"application/json","x-api-key":key,"authorization":`Bearer ${key}`,"anthropic-version":"2023-06-01"},
       body:JSON.stringify({model,max_tokens:160,
-        system:chatSystemPrompt(persona,{locale}),messages:[{role:"user",content:safePrompt}]}),
+        system:chatSystemPrompt(persona,{locale}) + (reminderContext ? "\n" + REMINDER_PROTOCOL + "\nApplication context: " + JSON.stringify(reminderContext) : ""),messages:[{role:"user",content:safePrompt}]}),
     });
     if(!response.ok) {
       await response.body?.cancel();
@@ -44,7 +45,14 @@ export async function askClaude(prompt,{provider=loadChatProvider,request=fetch,
       throw new Error("接口暂时没回应，请稍后再试。");
     }
     const data=await response.json();
-    const reply=cleanClaudeReply((data.content||[]).filter(block=>block.type==="text").map(block=>block.text).join(""));
+    const raw=(data.content||[]).filter(block=>block.type==="text").map(block=>block.text).join("");
+    if (reminderContext) {
+      if (data.stop_reason === "max_tokens") throw new Error("noteInvalid");
+      const result = parseReminderIntent(raw, reminderContext.submittedAt);
+      if (result.reply) result.reply = cleanClaudeReply(result.reply);
+      return result;
+    }
+    const reply=cleanClaudeReply(raw);
     if(!reply)throw new Error("我刚刚走神了，再说一次好吗？");
     return reply;
   } catch(error) {

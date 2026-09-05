@@ -26,6 +26,23 @@
         <fieldset id="motions" disabled><legend data-i18n="motions">动作</legend><div class="motion-row"><div class="gait-group" role="group" aria-label="步态" data-i18n-aria-label="gait"><button data-gait="idle" aria-pressed="true" data-i18n="idle">静止</button><button data-gait="walk" aria-pressed="false" data-i18n="walk">行走</button><button data-gait="run" aria-pressed="false" data-i18n="run">奔跑</button></div><div class="motion-secondary"><button data-reaction="hop" data-i18n="hop">轻跳</button><button id="egg-preview" data-i18n="easterEgg">彩蛋</button><button id="pause" aria-pressed="false" data-i18n="pausePreview">暂停预览</button></div></div></fieldset>
       </div>
       <div id="draft-fields" hidden>
+        <p id="text-language-hint"></p>
+        <div id="generation-result" hidden>
+          <p id="generation-timing" role="status" hidden></p>
+          <p id="generation-status" role="status" aria-live="polite"></p>
+          <button id="generation-settings" type="button" hidden data-i18n="providerMissingAction"></button>
+          <aside id="generation-proposal" hidden aria-live="polite">
+            <div class="proposal-heading"><div><strong id="proposal-title" data-i18n="suggestionReady">生成建议已准备好</strong><p data-i18n="suggestionHint">采用后才会写入当前草稿。</p></div><div class="proposal-actions"><button id="discard-suggestion" type="button" data-i18n="discardSuggestion">放弃建议</button><button id="adopt-suggestion" class="primary" type="button" data-i18n="adoptSuggestion">采用建议</button></div></div>
+            <ul id="generation-diff"></ul>
+          </aside>
+        </div>
+        <section id="generation-tools" hidden aria-label="自动生成角色资料" data-i18n-aria-label="autoGenerate">
+          <div class="generation-heading"><strong data-i18n="autoGenerate">自动生成</strong><div class="text-actions"><button id="generate-all" type="button" data-generate-scope="all" data-i18n="generateAll">生成全部文字</button><button type="button" data-translate-scope="all"></button></div></div>
+          <label for="generation-instruction" data-i18n="generationInstruction">补充要求</label>
+          <input id="generation-instruction" maxlength="300" autocomplete="off" placeholder="例如：更傲娇，台词短一点" data-i18n-placeholder="generationPlaceholder" />
+
+        </section>
+        <div class="editor-section-heading"><strong data-i18n="basicInfo">基本资料</strong><div class="text-actions"><button type="button" data-generate-scope="persona" data-i18n="generateSection">生成本区</button><button type="button" data-translate-scope="persona"></button></div></div>
         <label for="character-name" data-i18n="characterName">角色名称</label><input id="character-name" maxlength="40" autocomplete="off" />
         <section id="analysis-editor" aria-label="修正角色分析" data-i18n-aria-label="fixAnalysis">
           <div class="analysis-heading" hidden><strong id="quality-label"></strong><span id="quality-explanation"></span></div>
@@ -36,21 +53,22 @@
             <label class="wide"><span data-i18n="summary">气质说明</span><input id="persona-summary" maxlength="80" /></label>
             <label class="wide"><span data-i18n="traits">性格特点</span><input id="persona-traits" maxlength="51" placeholder="用逗号分隔，最多 4 个" data-i18n-placeholder="traitsPlaceholder" /></label>
           </div>
-          <div class="dialogue-heading"><strong data-i18n="dialogue">互动台词</strong><span data-i18n="dialogueHint">每项 1–4 句，用“｜”分隔</span></div>
+          <div class="dialogue-heading"><div><strong data-i18n="dialogue">互动台词</strong><span data-i18n="dialogueHint">手填 1–4 句，自动生成 4 句，用“｜”分隔</span></div><div class="text-actions"><button type="button" data-generate-scope="dialogue" data-i18n="generateSection">生成本区</button><button type="button" data-translate-scope="dialogue"></button></div></div>
           <div id="dialogue-list" class="dialogue-grid"></div>
+          <div class="editor-section-heading"><strong data-i18n="easterEgg">彩蛋</strong><div class="text-actions"><button type="button" data-generate-scope="easterEgg" data-i18n="generateSection">生成本区</button><button type="button" data-translate-scope="easterEgg"></button></div></div>
           <div class="egg-grid">
             <label><span data-i18n="eggName">彩蛋名称</span><input id="egg-label" maxlength="24" /></label>
             <label><span data-i18n="eggTrigger">触发互动</span><select id="egg-trigger"><option value="headpat">摸头</option><option value="tickle">挠痒</option><option value="poke">戳一戳</option><option value="cuddle">抱抱</option><option value="nuzzle">贴贴</option><option value="hop">点击脸部</option><option value="shy">点击头部</option></select></label>
             <label class="wide"><span data-i18n="eggDescription">彩蛋说明</span><input id="egg-description" maxlength="80" /></label>
             <label class="wide"><span data-i18n="eggLine">彩蛋短句</span><input id="egg-message" maxlength="50" /></label>
           </div>
-          <div class="parts-heading"><strong data-i18n="parts">互动部件</strong><button id="add-part" type="button" data-i18n="addPart">添加部件</button></div>
+          <div class="parts-heading"><strong data-i18n="parts">互动部件</strong><div><button type="button" data-generate-scope="parts" data-i18n="recognizeParts">重新识别</button><button id="add-part" type="button" data-i18n="addPart">添加部件</button></div></div>
           <div id="parts-list"></div>
           <p data-i18n="coordinates">坐标范围为 0–1。</p>
         </section>
       </div>
       <p id="motion-status" class="visually-hidden" aria-live="polite"></p>
-      <div class="detail-meta"><p id="status" role="status" aria-live="polite"></p><div class="manage-actions"><button id="edit" hidden data-i18n="edit">编辑</button><button id="remove" class="danger" hidden data-i18n="remove">删除…</button></div></div>
+      <div class="detail-meta"><p id="status" role="status" aria-live="polite"><span id="status-text"></span><button id="status-action" type="button" hidden></button></p><div class="manage-actions"><button id="edit" hidden data-i18n="edit">编辑</button><button id="remove" class="danger" hidden data-i18n="remove">删除…</button></div></div>
     </section>
   </main>
   <footer><div class="actions"><button id="cancel" hidden data-i18n="cancel">取消</button><button id="close" data-i18n="close">关闭</button><button id="apply" class="primary" disabled data-i18n="useCharacter">使用角色</button></div></footer>

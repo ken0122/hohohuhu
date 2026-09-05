@@ -65,9 +65,9 @@ test("custom character bubbles use authored and translated dialogue without muta
   assert.equal(chinese.reactions.hop.messages[0], "用户写的原句");
   assert.equal(english.reactions.hop.messages[0], "Custom hello");
   assert.equal(english.idle[0].messages[0], "Looking around…");
-  assert.equal(japanese.reactions.hop.messages[0], "ここにいるよ！");
+  assert.equal(japanese.reactions.hop.messages[0], "用户写的原句");
   assert.equal(japanese.idle[0].messages[0], "きょろきょろ…");
-  assert.equal(runtime.profile.reactions.hop.messages[0], "Ich bin hier!");
+  assert.equal(runtime.profile.reactions.hop.messages[0], "用户写的原句");
   assert.equal(runtime.profile.idle[0].messages[0], "Ich schaue mich um…");
   assert.equal(source.reactions.hop.messages[0], "用户写的原句");
   assert.equal(source.idle[0].messages[0], "用户写的自言自语");

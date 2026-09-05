@@ -1,3 +1,4 @@
+import { characterText } from "./character-draft.js";
 import { validateCharacterProfile } from "./character-profile.js";
 
 const COMMON = {
@@ -8,16 +9,6 @@ const COMMON = {
   fr: { reactions:["J’aime cette caresse","Hé, ça chatouille !","Pas le ventre !","Encore un câlin","Tout contre toi","Je suis là !","Un peu timide…"], near:["Te voilà","Reste encore un peu"], idle:["Je regarde…","Un petit étirement","Ronron…","Je me balance"] },
   de: { reactions:["Das Streicheln tut gut","He, das kitzelt!","Nicht in den Bauch stupsen","Noch eine Umarmung","Ganz nah bei dir","Ich bin hier!","Etwas schüchtern…"], near:["Du bist da","Bleib noch ein wenig"], idle:["Ich schaue mich um…","Kurz strecken","Schnurr…","Sanft hin und her"] },
   ru: { reactions:["Гладить так приятно","Ой, щекотно!","Не тыкай в животик","Ещё обнимашку","Прижмусь к тебе","Я здесь!","Немного стесняюсь…"], near:["Ты пришёл","Побудь ещё немного"], idle:["Осмотрюсь…","Немного потянусь","Мур…","Качаюсь тихонько"] },
-};
-
-const CUSTOM_EGG = {
-  "zh-CN": "发现小秘密啦",
-  "zh-TW": "發現小秘密啦",
-  en: "You found my little secret",
-  ja: "小さな秘密、見つかったね",
-  fr: "Tu as découvert mon petit secret",
-  de: "Du hast mein kleines Geheimnis entdeckt",
-  ru: "Ты нашёл мой маленький секрет",
 };
 
 const SPECIAL = {
@@ -64,17 +55,21 @@ export function localizedBuiltinProfile(id, base, locale) {
 export function localizedCustomProfile(base, locale, analysis) {
   const common = COMMON[locale];
   if (!common) return validateCharacterProfile(base);
-  const translated = analysis?.dialogueTranslations?.[locale];
-  const sourceMatches = analysis?.sourceLocale === locale;
+  const text = analysis ? characterText({ analysis: { ...analysis,
+    dialogue: analysis.dialogue || Object.fromEntries(INTENTS.map(intent => [intent, base.reactions[intent].messages])),
+    persona: analysis.persona || base.persona,
+    easterEgg: analysis.easterEgg || { label: base.easterEgg.label, description: base.easterEgg.description, triggerIntent: base.easterEgg.trigger.intent, message: base.easterEgg.reaction.messages[0] },
+  } }, locale).analysis : null;
   const reactions = Object.fromEntries(INTENTS.map((intent, index) => [intent, {
     ...base.reactions[intent],
-    messages: translated?.[intent] || (sourceMatches ? base.reactions[intent].messages : [common.reactions[index]]),
+    messages: text?.dialogue[intent] || base.reactions[intent].messages,
   }]));
   return validateCharacterProfile({
     ...base,
+    persona: text?.persona || base.persona,
     reactions,
     proximity: { enter: { ...base.proximity.enter, messages: [common.near[0]] }, dwell: { ...base.proximity.dwell, messages: [common.near[1]] } },
     idle: base.idle.map((item, index) => ({ ...item, messages: [common.idle[index % common.idle.length]] })),
-    easterEgg: { ...base.easterEgg, reaction: { ...base.easterEgg.reaction, messages: [CUSTOM_EGG[locale]] } },
+    easterEgg: { ...base.easterEgg, ...(text ? { label: text.easterEgg.label, description: text.easterEgg.description, trigger: { ...base.easterEgg.trigger, intent: text.easterEgg.triggerIntent } } : {}), reaction: { ...base.easterEgg.reaction, messages: text ? [text.easterEgg.message] : base.easterEgg.reaction.messages } },
   });
 }

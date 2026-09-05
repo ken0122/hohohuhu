@@ -12,8 +12,11 @@ export function messagesUrl(baseUrl) {
   if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
     throw new Error("Base URL 必须是无账号、查询参数或片段的 HTTPS 地址。");
   }
-  url.pathname = url.pathname.replace(/\/+$/, "");
-  if (!url.pathname.endsWith("/v1/messages")) url.pathname += "/v1/messages";
+  // Assign once: URL normalizes an empty pathname back to '/', which would
+  // otherwise turn a bare host into '//v1/messages'. Keep version bases intact.
+  const pathname = url.pathname.replace(/\/+$/, "");
+  url.pathname = pathname.endsWith("/v1/messages") ? pathname
+    : pathname.endsWith("/v1") ? pathname + "/messages" : pathname + "/v1/messages";
   return url.toString();
 }
 
@@ -48,5 +51,8 @@ export function providerRequest(value) {
 export async function loadChatProvider({ env = process.env } = {}) {
   const configured = providerFromEnvironment(env);
   if (configured) return providerRequest(configured);
-  throw new Error("请先在聊天设置中配置兼容接口，或设置 BLUEPET_API_BASE_URL、BLUEPET_API_KEY 和 BLUEPET_CHAT_MODEL。");
+  const error = new Error("请先前往聊天设置添加兼容接口");
+  error.code = PROVIDER_NOT_CONFIGURED;
+  throw error;
 }
+export const PROVIDER_NOT_CONFIGURED = "PROVIDER_NOT_CONFIGURED";

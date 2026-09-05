@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { app, dialog, globalShortcut, nativeImage, nativeTheme, screen, powerMonitor, systemPreferences } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, nativeImage, nativeTheme, Notification, screen, powerMonitor, systemPreferences } from "electron";
 import { createDesktopTestSelection } from "./desktop-test-selection.mjs";
 
 // Do not await app readiness at module top level: Electron awaits ESM evaluation.
@@ -12,6 +12,8 @@ const testUserData = await mkdtemp(path.resolve("work/desktop-test-"));
 app.setPath("userData", testUserData);
 await writeFile(path.join(testUserData, "preferences-v1.json"), JSON.stringify({ version: 1, theme: "system", locale: "zh-CN" }));
 process.env.BLUEPET_TEST_CHARACTER_ANALYSIS = "1";
+const { characterApiFixture } = await import("./fixtures/character-api.mjs");
+globalThis[Symbol.for("bluepet.characterTestServices")] = characterApiFixture;
 const runtime = await import(process.env.BLUEPET_TEST_APP_ROOT
   ? pathToFileURL(path.join(process.env.BLUEPET_TEST_APP_ROOT, "src/main.js")).href
   : "../src/main.js");
@@ -87,6 +89,144 @@ try {
   await until(() => getRuntime().petWindow && !getRuntime().petWindow.webContents.isLoading());
   await delay(200);
   await until(()=>evaluate("Boolean(document.querySelector('.mascot-svg'))"));
+  await check("Reminders: chat creation, replacement, native delivery, hidden/game fallback and recovery", ["smoke", "chat", "reminders", "focus"], async () => {
+    const previousEnv = Object.fromEntries(["BLUEPET_API_BASE_URL", "BLUEPET_API_KEY", "BLUEPET_CHAT_MODEL"].map(key => [key, process.env[key]]));
+    Object.assign(process.env, { BLUEPET_API_BASE_URL: "https://reminder-test.example", BLUEPET_API_KEY: "test-only-reminder", BLUEPET_CHAT_MODEL: "mock-model" });
+    let next = { intent: "create", text: "喝水", seconds: 2 }, calls = 0, notifications = 0;
+    const realShow = Notification.prototype.show;
+    Notification.prototype.show = function () { notifications++; };
+    runtime.setReminderRequestForTest(async () => { calls++; return Response.json({ content: [{ type: "text", text: JSON.stringify(next) }] }); });
+    const competitor = new BrowserWindow({ width: 300, height: 140, show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+    await competitor.loadURL("about:blank");
+    const send = async message => {
+      await evaluate(`document.querySelector('#message').value=${JSON.stringify(message)};document.querySelector('#chat-form').requestSubmit()`);
+      await until(() => evaluate("!document.body.classList.contains('is-thinking')"));
+    };
+    const clearNote = () => {
+      const manager = getRuntime().reminders, snap = manager.snapshot();
+      if (snap.note) manager.action({ action: "cancel", id: snap.note.id, revision: snap.revision });
+    };
+    try {
+      setMode("pet"); showChat(); await delay(100);
+      await send("两秒后提醒我喝水");
+      assert.equal(getRuntime().reminders.snapshot().note.text, "喝水");
+      const { readFile } = await import("node:fs/promises");
+      assert.equal((await readFile(path.join(testUserData, "reminder-v1.enc"))).includes(Buffer.from("喝水")), false);
+      restorePetFrame(); competitor.show(); await focusWindow(competitor);
+      let petStoleFocus = false;
+      const trackFocus = () => { petStoleFocus = true; };
+      getRuntime().petWindow.on("focus", trackFocus);
+      await until(() => evaluate("document.querySelector('.speech').classList.contains('note-due')"), 4500);
+      getRuntime().petWindow.removeListener("focus", trackFocus);
+      assert.equal(petStoleFocus, false, "automatic reminder never requests native keyboard focus");
+      assert.equal(getRuntime().petWindow.isFocused(), false);
+      assert.deepEqual([getRuntime().petWindow.getBounds().width, getRuntime().petWindow.getBounds().height], [272, 242]);
+      assert.equal(notifications, 0, "visible delivery does not also create a system notification");
+      const rect = await evaluate(`(()=>{const p=document.querySelector('#note-panel').getBoundingClientRect(), a=document.querySelector('#note-actions').getBoundingClientRect();return {bottom:p.bottom,actions:a.bottom,scroll:document.documentElement.scrollWidth,width:innerWidth}})()`);
+      assert.ok(rect.actions <= rect.bottom + 1); assert.equal(rect.scroll, rect.width);
+      getRuntime().trayMenu.getMenuItemById("theme-light").click(); await delay(1700);
+      await writeFile(path.resolve("work/reminder-implementation/due-light.png"), (await getRuntime().petWindow.webContents.capturePage()).toPNG());
+      getRuntime().trayMenu.getMenuItemById("theme-dark").click(); await delay(120);
+      await writeFile(path.resolve("work/reminder-implementation/due-dark.png"), (await getRuntime().petWindow.webContents.capturePage()).toPNG());
+      for (const language of ["zh-TW", "en", "ja", "fr", "de", "ru", "zh-CN"]) {
+        getRuntime().trayMenu.getMenuItemById("locale-" + language).click();
+        await until(() => evaluate(`document.documentElement.lang===${JSON.stringify(language)}`));
+        assert.ok(await evaluate("document.querySelector('#note-actions').getBoundingClientRect().bottom <= document.querySelector('.speech').getBoundingClientRect().bottom - 10"));
+      }
+      await evaluate("document.querySelector('#dismiss').click()"); await until(() => !getRuntime().state.chatOpen);
+      runtime.checkReminders(); await delay(100);
+      assert.equal(getRuntime().state.chatOpen, false); assert.equal(getRuntime().reminders.snapshot().note.dismissed, true);
+      showChat(); await delay(100); await evaluate("document.querySelector('[data-action=ack]').click()");
+      await until(() => !getRuntime().reminders.snapshot().note);
+
+      showChat(); next = { intent: "create", text: "记得带充电器", seconds: 600 };
+      await send("十分钟后提醒我带充电器");
+      await evaluate("document.querySelector('#note-back').click()"); await until(() => evaluate("!document.querySelector('#chat-content').hidden"));
+      next = { intent: "create", text: "喝水", seconds: 900 }; await send("十五分钟后提醒我喝水");
+      await until(() => evaluate("!!document.querySelector('[data-action=replace]')"));
+      await writeFile(path.resolve("work/reminder-implementation/replace-dark.png"), (await getRuntime().petWindow.webContents.capturePage()).toPNG());
+      assert.equal(getRuntime().reminders.snapshot().note.text, "记得带充电器");
+      await evaluate("document.querySelector('[data-action=keep]').click()");
+      await until(() => !getRuntime().reminders.snapshot().proposal);
+      await evaluate("document.querySelector('#note-back').click()"); await delay(50);
+      await send("十五分钟后提醒我喝水");
+      await evaluate("document.querySelector('[data-action=replace]').click()");
+      await until(() => getRuntime().reminders.snapshot().note.text === "喝水");
+      await evaluate("document.querySelector('[data-action=cancel]').click()");
+      await until(() => !getRuntime().reminders.snapshot().note);
+
+      // While typing, only the badge changes; content and input stay untouched.
+      next = { intent: "create", text: "喝水", seconds: 1 }; await send("一秒后提醒我喝水");
+      await evaluate("document.querySelector('#note-back').click()"); await delay(50);
+      await evaluate("document.querySelector('#message').value='未发送的草稿'");
+      await delay(1100); runtime.checkReminders();
+      assert.equal(await evaluate("document.querySelector('#message').value"), "未发送的草稿");
+      assert.equal(await evaluate("document.querySelector('#chat-content').hidden"), false);
+      assert.equal(await evaluate("document.querySelector('#note-badge').textContent"), "叮，约好的时间到啦");
+      clearNote(); restorePetFrame();
+
+      for (const destination of ["hidden", "beans"]) {
+        showChat(); next = { intent: "create", text: "喝水", seconds: 1 }; await send("一秒后提醒我喝水");
+        restorePetFrame();
+        if (destination === "hidden") await toggleAndWait(); else setMode("beans");
+        await delay(1100); runtime.checkReminders(); runtime.checkReminders();
+        assert.equal(notifications, destination === "hidden" ? 1 : 2);
+        if (destination === "hidden") { assert.equal(getRuntime().petWindow.isVisible(), false); await toggleAndWait(); }
+        else { assert.equal(getRuntime().state.mode, "beans"); setMode("pet"); }
+        runtime.checkReminders(); await until(() => evaluate("document.querySelector('.speech').classList.contains('note-due')"));
+        clearNote(); restorePetFrame();
+      }
+      const before = calls;
+      assert.ok(before >= 7); // Only user submissions used the mock provider.
+      powerMonitor.emit("unlock-screen"); runtime.checkReminders();
+      assert.equal(calls, before);
+    } finally {
+      clearNote(); competitor.destroy();
+      runtime.setReminderRequestForTest(undefined); Notification.prototype.show = realShow;
+      for (const [key, value] of Object.entries(previousEnv)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+      if (getRuntime().state.manualHidden) await toggleAndWait();
+      setMode("pet"); restorePetFrame();
+      getRuntime().trayMenu.getMenuItemById("theme-system").click();
+      getRuntime().trayMenu.getMenuItemById("locale-zh-CN").click();
+    }
+  });
+  await check("Reminders: reduced motion before display and live, lock/resume and Dodge hit testing", ["reminders", "motion", "focus"], async () => {
+    const win = getRuntime().petWindow, manager = getRuntime().reminders;
+    const clear = () => { const s = manager.snapshot(); if (s.note) manager.action({ action: "cancel", id: s.note.id, revision: s.revision }); };
+    const create = () => manager.submit(async () => ({ intent: "create", text: "桌面验证纸条", dueAt: Date.now() + 250 }));
+    const realCursor = screen.getCursorScreenPoint;
+    win.webContents.debugger.attach("1.3");
+    const reduce = value => win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value }] });
+    try {
+      setMode("dodge"); restorePetFrame();
+      screen.getCursorScreenPoint = () => ({ x: 0, y: 0 });
+      await reduce("reduce"); await create(); await delay(280); runtime.checkReminders();
+      await until(() => evaluate("document.querySelector('.speech').classList.contains('note-due')"));
+      assert.ok(await evaluate("parseFloat(getComputedStyle(document.querySelector('.speech')).animationDuration) < 0.001"));
+      assert.equal(getRuntime().ignoringMouse, true);
+      screen.getCursorScreenPoint = () => ({ x: win.getBounds().x + 80, y: win.getBounds().y + 55 });
+      await until(() => !getRuntime().ignoringMouse);
+      const stopped = win.getPosition(); await delay(120); assert.deepEqual(win.getPosition(), stopped);
+      clear(); restorePetFrame(); await reduce("no-preference");
+      await create(); await delay(280); runtime.checkReminders();
+      await until(() => evaluate("document.querySelector('.speech').classList.contains('note-due')"));
+      await reduce("reduce");
+      assert.ok(await evaluate("parseFloat(getComputedStyle(document.querySelector('.note-sparkles path')).animationDuration) < 0.001"));
+      clear(); restorePetFrame();
+      powerMonitor.emit("lock-screen"); powerMonitor.emit("suspend");
+      await create(); await delay(280); runtime.checkReminders();
+      assert.equal(getRuntime().state.chatOpen, false);
+      powerMonitor.emit("resume"); assert.equal(getRuntime().state.chatOpen, false, "resume must not bypass a still-locked screen");
+      powerMonitor.emit("unlock-screen");
+      await until(() => getRuntime().state.chatOpen);
+      assert.equal(manager.snapshot().note.due, true);
+    } finally {
+      clear(); restorePetFrame(); screen.getCursorScreenPoint = realCursor;
+      await win.webContents.debugger.sendCommand("Emulation.setEmulatedMedia", { features: [] });
+      win.webContents.debugger.detach();
+      powerMonitor.emit("unlock-screen");
+    }
+  });
   await check("appearance and language switch live without reloading or losing state", ["smoke", "appearance", "settings"], async () => {
     setMode("pet"); showChat(); await until(() => getRuntime().state.chatOpen && getRuntime().petWindow.isVisible());
     const win = getRuntime().petWindow, id = win.webContents.id;
@@ -288,6 +428,7 @@ try {
       await until(() => getRuntime().characterWindow?.isVisible());
       const win = getRuntime().characterWindow, js = code => win.webContents.executeJavaScript(code);
       await until(() => js("document.body.dataset.ready === 'true'"));
+      assert.equal(await js("window.characterLibrary.generate({id:'blue-one-eye'}).then(result=>result.ok)"), false, "built-in characters must be rejected by the generation IPC boundary");
       await js("document.querySelector('#choose').click()");
       await until(() => js("document.body.getAttribute('aria-busy') === 'false'"));
       assert.equal(rightsPrompts, 1);
@@ -332,10 +473,35 @@ try {
       assert.equal(stored.items[0].svg,await js("window.characterLibrary.source("+JSON.stringify(importedId)+").then(r=>r.value.svg)"));
       await js("document.querySelector('#edit').click()");
       await until(() => js("!document.querySelector('#draft-fields').hidden && document.querySelector('#apply').textContent === '保存修改'"));
+      assert.equal(await js("!document.querySelector('#generation-tools').hidden"), true);
+      assert.equal(await js("document.querySelector('#generation-instruction').maxLength"), 300);
+      assert.deepEqual(await js("[getComputedStyle(document.documentElement).overscrollBehavior,getComputedStyle(document.body).overscrollBehavior,getComputedStyle(document.querySelector('.detail')).overscrollBehaviorY]"), ["none","none","none"]);
+      assert.equal(await js("!document.querySelector('[data-i18n=generationHint]') && !document.querySelector('[data-i18n=generationPrivacy]')"), true);
+      assert.equal(await js("(()=>{const root=document.documentElement,old=root.dataset.theme;root.dataset.theme='dark';const color=getComputedStyle(document.querySelector('#generation-instruction'),'::placeholder').color;root.dataset.theme=old;return color})()"), "rgb(174, 186, 219)");
+      assert.deepEqual(await js("Array.from(document.querySelectorAll('[data-generate-scope]'),button=>button.dataset.generateScope)"), ["all","persona","dialogue","dialogue:headpat","dialogue:tickle","dialogue:poke","dialogue:cuddle","dialogue:nuzzle","dialogue:hop","dialogue:shy","easterEgg","parts"]);
+      await js("document.querySelector('#generation-instruction').value='__missing_provider__';document.querySelector('[data-generate-scope=persona]').click()");
+      await until(() => js("!document.querySelector('#generation-settings').hidden && document.body.getAttribute('aria-busy') === 'false'"));
+      assert.equal(await js("document.querySelector('#generation-settings').textContent"), "请先前往聊天设置添加兼容接口");
+      await writeFile(path.resolve("work/character-generation-missing-provider.png"),(await win.webContents.capturePage()).toPNG());
+      await js("document.querySelector('#generation-settings').click()");
+      await until(() => getRuntime().settingsWindow?.isVisible());
+      getRuntime().settingsWindow.close(); await until(() => !getRuntime().settingsWindow);
+      await js("document.querySelector('#generation-instruction').value='台词更机灵，但保持克制';document.querySelector('[data-generate-scope=\"dialogue\\:headpat\"]').click()");
+      await until(() => js("!document.querySelector('#generation-proposal').hidden && document.body.getAttribute('aria-busy') === 'false'"));
+      assert.deepEqual(await js("[document.querySelector('[data-dialogue=headpat]').value,document.querySelector('#generation-diff').textContent.includes('AI 生成的 headpat 台词')]"), ["只是刚好没躲｜再摸一下也不是不行｜第三句｜第四句",true]);
+      await writeFile(path.resolve("work/character-generation-proposal.png"),(await win.webContents.capturePage()).toPNG());
+      win.setSize(720,620); await until(() => js("innerWidth === 720"));
+      assert.equal(await js("document.documentElement.scrollWidth <= innerWidth && document.querySelector('#apply').getBoundingClientRect().bottom <= innerHeight"), true);
+      await writeFile(path.resolve("work/character-generation-proposal-small.png"),(await win.webContents.capturePage()).toPNG());
+      win.setSize(...fullSize); await until(() => js("innerWidth === "+fullSize[0]));
+      await js("document.querySelector('#adopt-suggestion').click()");
+      await until(() => js("document.querySelector('[data-dialogue=headpat]').value === 'AI 生成的 headpat 台词｜第二句｜第三句｜第四句' && document.body.getAttribute('aria-busy') === 'false'"));
       await js("document.querySelector('#character-name').value='改名后的测试角色';document.querySelector('[data-dialogue=nuzzle]').value='编辑后的贴贴';document.querySelector('#apply').click()");
       await until(() => js("document.querySelector('#name').textContent === '改名后的测试角色'"));
       const editedStored = JSON.parse(await readFile(path.join(app.getPath('userData'),'characters-v2.json'),'utf8'));
       assert.equal(editedStored.items[0].name,'改名后的测试角色');
+      assert.deepEqual(editedStored.items[0].analysis.dialogue.headpat,['AI 生成的 headpat 台词','第二句','第三句','第四句']);
+      assert.equal(editedStored.items[0].analysis.dialogueTranslations.en,undefined);
       assert.deepEqual(editedStored.items[0].analysis.dialogue.nuzzle,['编辑后的贴贴']);
       assert.equal((await js("window.characterLibrary.import({name:'attack',svg:'<svg onload=\"alert(1)\"/>'})")).ok,false);
       const {default:sharp} = await import('sharp');
@@ -366,6 +532,7 @@ try {
       getRuntime().characterWindow.close(); await until(() => !getRuntime().characterWindow);
     } finally { dialog.showOpenDialog = originalPicker; dialog.showMessageBox = originalMessageBox; }
   });
+  await (await import("./character-generation-test.mjs")).characterGenerationChecks({ getRuntime, until, check });
   await check("Character color import: raster normalization, editable analysis and live use", ["character", "import", "focus"], async () => {
     const originalPicker = dialog.showOpenDialog;
     const originalMessageBox = dialog.showMessageBox;
@@ -721,6 +888,8 @@ try {
   });
   await check("Dodge chat: no wander, native avoidance, input stability, hit testing and bubble geometry", ["dodge", "chat", "focus"], async()=>{
     setMode("pet");await until(()=>!getRuntime().modeTransition,7000);
+    // Drafts now survive closing the bubble; this typing check needs its own empty fixture.
+    await evaluate("document.querySelector('#message').value=''");
     const win=getRuntime().petWindow,origin=getRuntime().position;
     const area=screen.getDisplayMatching(win.getBounds()).workArea;
     const target={x:area.x+area.width/2-66,y:area.y+area.height/2-66};
@@ -1101,6 +1270,42 @@ try {
     assert.ok(longHint.lines>=2,"long interaction copy wraps instead of overflowing");
     assert.ok(longBounds.height>shortBounds.height,"long copy grows upward in its own native window");
     assert.equal(longBounds.y+longBounds.height,shortBounds.y+shortBounds.height,"copy length never moves the bubble tip down onto the pet");
+    // Real Chromium wrapping (punctuation, mixed scripts and word boundaries)
+    // must fit the native window, including existing 50-unit authored dialogue.
+    let hintLocale = 'zh-CN';
+    for (const [language, message] of [
+      ['zh-CN','戳脑袋是不科学的行为，会影响CPU……啊不，大脑运转。'],
+      ['zh-CN','哈！'.repeat(25)],
+      ['zh-CN','English words also wrap inside a Chinese bubble.'],
+      ['ja','ちょっと待って！CPU……じゃなくて、頭がくすぐったい！'],
+      ['en','A wonderfully unexpected little head pat, thank you'.slice(0,50)],
+    ]) {
+      assert.ok(message.length <= 50);
+      if (language !== hintLocale) {
+        getRuntime().trayMenu.getMenuItemById('locale-'+language).click();
+        await until(()=>getRuntime().hintMessage === '' && hintWin.webContents.executeJavaScript(`document.documentElement.lang===${JSON.stringify(language)}`));
+        hintLocale = language;
+      }
+      await evaluate(`window.bluepet.setPetHint(${JSON.stringify(message)})`);
+      try {
+        await until(()=>hintWin.isVisible() && hintWin.webContents.executeJavaScript(`document.querySelector('#pet-hint').textContent===${JSON.stringify(message)}`));
+      } catch (error) {
+        error.message += JSON.stringify({language,message,active:getRuntime().hintMessage,visible:hintWin.isVisible(),layout:await hintWin.webContents.executeJavaScript(`({text:document.querySelector('#pet-hint').textContent,lang:document.documentElement.lang,width:innerWidth,height:innerHeight})`)});
+        throw error;
+      }
+      await delay(320);
+      const layout = await hintWin.webContents.executeJavaScript(`(()=>{
+        const h=document.querySelector('#pet-hint'),range=document.createRange();range.selectNodeContents(h);
+        return {height:innerHeight,top:h.getBoundingClientRect().top,rows:[...range.getClientRects()].map(r=>({top:r.top,bottom:r.bottom,left:r.left,right:r.right})),width:innerWidth};
+      })()`);
+      assert.ok(layout.top>=0,JSON.stringify({language,message,layout}));
+      assert.ok(layout.rows.every(r=>r.top>=0&&r.bottom<=layout.height&&r.left>=0&&r.right<=layout.width),JSON.stringify(layout));
+      const bounds=hintWin.getBounds();
+      assert.equal(bounds.height,layout.height);
+      assert.equal(bounds.y+bounds.height,shortBounds.y+shortBounds.height);
+      if(language==='zh-CN'&&message.includes('CPU')) await writeFile(path.resolve('work/pet-mixed-text-bubble.png'),(await hintWin.webContents.capturePage()).toPNG());
+    }
+    getRuntime().trayMenu.getMenuItemById('locale-zh-CN').click();
     await delay(80);
     await writeFile(path.resolve("work/pet-cartoon-bubble.png"),(await hintWin.webContents.capturePage()).toPNG());
     await evaluate("window.bluepet.setPetHint('')");await until(()=>!hintWin.isVisible());

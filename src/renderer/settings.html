@@ -14,20 +14,20 @@
 <body aria-busy="true">
   <main>
     <h1 data-i18n="settingsHeading">聊天设置</h1>
-    <p class="intro" data-i18n="settingsIntro">连接兼容的 HTTPS API 后，就能和角色聊天。</p>
+    <p class="intro" data-i18n="settingsIntro">配置 API 后，即可聊天和识别角色图片。</p>
     <form id="settings-form">
       <fieldset id="fields" disabled>
         <label for="base-url" data-i18n="baseUrl">接口地址</label>
         <input id="base-url" type="url" required maxlength="256" spellcheck="false" aria-describedby="url-hint">
-        <p class="hint" id="url-hint" data-i18n="baseUrlHint">使用 Anthropic Messages 兼容接口；会在 Base URL 后补 /v1/messages。</p>
+        <p class="hint" id="url-hint" data-i18n="baseUrlHint">需要时会自动补全 /v1/messages。</p>
         <label for="api-key" data-i18n="apiKey">API 密钥</label>
         <input id="api-key" type="password" maxlength="4096" autocomplete="off" spellcheck="false" aria-describedby="key-hint">
-        <p class="hint" id="key-hint" data-i18n="apiKeyHint">密钥会加密保存在这台 Mac，不会显示或发给其他服务。</p>
+        <p class="hint" id="key-hint" data-i18n="apiKeyHint">密钥仅加密保存在这台 Mac。</p>
         <label for="chat-model" data-i18n="chatModel">对话模型</label>
         <input id="chat-model" required maxlength="200" autocomplete="off" spellcheck="false">
         <label for="vision-model" data-i18n="visionModel">图片分析模型</label>
         <input id="vision-model" maxlength="200" autocomplete="off" spellcheck="false" aria-describedby="vision-hint">
-        <p class="hint" id="vision-hint" data-i18n="visionModelHint">可选；留空时使用对话模型。接口和模型必须支持图片输入。</p>
+        <p class="hint" id="vision-hint" data-i18n="visionModelHint">可选；留空则使用对话模型。需支持图片输入。</p>
         <p id="status" role="status" aria-live="polite" data-i18n="loading">正在读取…</p>
         <div class="actions">
           <button id="clear" type="button" data-i18n="clearConfig">清除配置</button>

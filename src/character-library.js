@@ -6,9 +6,11 @@ import { BLUE_ONE_EYE, BLACK_CAT, SUNNY_YELLOW } from "./characters.js";
 import { inspectCharacterImage, MAX_IMAGE_BYTES } from "./character-import.js";
 import { createCharacterStore } from "./character-store.js";
 import { brand, t } from "./i18n.js";
+import { cleanCharacterDiagnostics } from "./character-timing.js";
+import { characterErrorDetails } from "./character-errors.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
-export async function createCharacterLibrary({ directory, onChange, onOpen, bindEditingShortcuts, analyzeImage, locale = () => "zh-CN", backgroundColor = () => "#fbfcff", shouldForceClose = () => false }) {
+export async function createCharacterLibrary({ directory, onChange, onOpen, openSettings, bindEditingShortcuts, analyzeImage, generateFields, locale = () => "zh-CN", backgroundColor = () => "#fbfcff", shouldForceClose = () => false }) {
   const store = await createCharacterStore(directory);
   const sources = new Map(await Promise.all([BLUE_ONE_EYE, BLACK_CAT, SUNNY_YELLOW].map(async definition => [
     definition.id, await readFile(path.join(dirname, "../assets", definition.asset), "utf8"),
@@ -58,7 +60,27 @@ export async function createCharacterLibrary({ directory, onChange, onOpen, bind
   const handlers = {
     list: () => store.catalog(), source,
     choose: chooseImage,
+    openSettings: () => { openSettings(); return true; },
     analyze: value => analyzeImage(value),
+    generate: value => {
+      if (typeof value?.id !== "string" || !/^local-[0-9a-f-]{36}$/.test(value.id)) {
+        throw new Error("只能为自己添加的角色自动生成资料。");
+      }
+      const entry = store.source(value?.id);
+      if (entry.builtin) throw new Error("内置角色不能自动生成或修改资料。");
+      const owner = window;
+      return generateFields({
+        svg: entry.svg,
+        name: value?.name,
+        analysis: value?.analysis,
+        saved: { analysis: entry.analysis, name: store.catalog().items.find(item => item.id === value.id).name },
+        scope: value?.scope, action: value?.action,
+        instruction: value?.instruction,
+      }, (phase, diagnostics) => {
+        if (window === owner && !owner.isDestroyed() && ["generation", "translation", "repair"].includes(phase))
+          owner.webContents.send("characters:generation-progress", phase, cleanCharacterDiagnostics(diagnostics));
+      });
+    },
     async select(id) { const value = await store.select(id); onChange(); return value; },
     async import(value) { const result = await store.import(value); onChange(); return result; },
     async update(value) { const result = await store.update(value?.id, value); onChange(); return result; },
@@ -67,7 +89,10 @@ export async function createCharacterLibrary({ directory, onChange, onOpen, bind
   for (const [name, handle] of Object.entries(handlers)) ipcMain.handle("characters:" + name, async (event, value) => {
     if (!fromLibrary(event)) return { ok: false, error: "无效的角色库窗口。" };
     try { return { ok: true, value: await handle(value) }; }
-    catch (error) { return { ok: false, error: error.code ? "无法读取图片，请确认文件可用后重试。" : error.message }; }
+    catch (error) {
+      const fileError = typeof error.code === "string" && /^E[A-Z]+$/.test(error.code);
+      return { ok: false, error: fileError ? "无法读取图片，请确认文件可用后重试。" : error.message, code: fileError ? undefined : error.code, details: characterErrorDetails(error), diagnostics: cleanCharacterDiagnostics(error.diagnostics) };
+    }
   });
   ipcMain.on("characters:close", event => { if (fromLibrary(event)) window.close(); });
   ipcMain.on("characters:dirty", (event, value) => { if (fromLibrary(event)) dirty = value === true; });

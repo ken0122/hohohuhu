@@ -5,6 +5,7 @@
   --ink: #17234b;
   --muted: #52618a;
   --muted-soft: #67749a;
+  --placeholder: #626f94;
   --border: #c4cee9;
   --divider: #e4e8f4;
   --field: #edf1ff;
@@ -36,6 +37,7 @@
   --ink: #f3f6ff;
   --muted: #bdc8e8;
   --muted-soft: #aebadb;
+  --placeholder: #aebadb;
   --border: #465579;
   --divider: #2d3957;
   --field: #202c49;
@@ -67,6 +69,7 @@
     --ink: #f3f6ff;
     --muted: #bdc8e8;
     --muted-soft: #aebadb;
+    --placeholder: #aebadb;
     --border: #465579;
     --divider: #2d3957;
     --field: #202c49;

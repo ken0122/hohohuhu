@@ -40,10 +40,11 @@ import {
 import { BLUE_ONE_EYE, characterDefinition } from "./characters.js";
 import { transitionState } from "./app-state.js";
 import { createApiSettingsStore } from "./api-settings.js";
-import { analyzeCharacterImage, validateCharacterAnalysis } from "./character-analysis.js";
+import { analyzeCharacterImage, generateCharacterFields } from "./character-analysis.js";
 import { createCharacterLibrary } from "./character-library.js";
-import { loadChatProvider } from "./chat-provider.js";
+import { loadChatProvider, PROVIDER_NOT_CONFIGURED } from "./chat-provider.js";
 import { askClaude } from "./chat.js";
+import { createReminderStore, createReminders } from "./reminders.js";
 import { createDodgeMotion } from "./dodge.js";
 import { arriveAt, launchVelocity } from "./mode-motion.js";
 import { brand, t } from "./i18n.js";
@@ -72,6 +73,41 @@ const state = { mode: initialMode, manualHidden: false, chatOpen: false, control
 let petWindow, hintWindow, gameWindow, settingsWindow, apiSettingsStore, preferencesStore, characterLibrary, tray, trayMenu, loop;
 let locale = "zh-CN";
 let selectedCharacter = BLUE_ONE_EYE;
+let reminders, reminderTimer, reminderView = "chat", autoReminder = false, screenLocked = false, suspended = false;
+let reminderRequest;
+function sendReminderState() {
+  if (reminders) send("reminder:state", { ...reminders.snapshot(), view: reminderView });
+}
+function presentReminder() {
+  reminderView = "note";
+  autoReminder = true;
+  interruptInteraction();
+  dispatch("chat");
+  syncWindows();
+  sendReminderState();
+}
+export function checkReminders() {
+  if (!reminders || quitting || !petReady) return;
+  sendReminderState();
+  const surface = screenLocked || suspended ? "defer" : state.manualHidden || state.mode === MODES.BEANS ? "notification"
+    : state.chatOpen || dragSession || keys.size || menuOpen || reminders.busy ? "defer" : "bubble";
+  try {
+    const delivery = reminders.delivery(surface);
+    if (!delivery) return;
+    if (delivery.type === "bubble") presentReminder();
+    else if (Notification.isSupported()) {
+      // Lock-screen banners deliberately contain no reminder content.
+      const notification = new Notification({ title: brand(locale), body: t(locale, "noteNotice"), silent: true });
+      notification.on("click", () => {
+        if (reminders.snapshot().note?.id !== delivery.note.id) return;
+        showChat(); reminderView = "note"; sendReminderState();
+      });
+      notification.show();
+    }
+  } catch { send("reminder:error", "noteStorageFailed"); }
+}
+// Main-process test injection only: never exposed by preload or an IPC channel.
+export function setReminderRequestForTest(request) { reminderRequest = request; }
 let petReady = false,
   gameReady = false,
   quitting = false,
@@ -88,6 +124,7 @@ let dragSession;
 let petHovered = false;
 let hintReady = false,
   hintMessage = "";
+let hintMeasurement;
 const dodge = createDodgeMotion();
 const cursorAttention = createCursorAttention();
 const petReturn = createPetReturnTracker();
@@ -111,6 +148,15 @@ const hintWebPreferences = {
   nodeIntegration: false,
   backgroundThrottling: false,
 };
+
+function characterServices() {
+  if (process.env.BLUEPET_TEST_CHARACTER_ANALYSIS === "1") {
+    const services = globalThis[Symbol.for("bluepet.characterTestServices")];
+    if (typeof services?.provider !== "function" || typeof services?.request !== "function") throw new Error("Character test transport is required");
+    return { provider: services.provider, request: services.request, locale };
+  }
+  return { provider: () => apiSettingsStore.provider() || loadChatProvider(), locale };
+}
 
 const windowBackground = () => nativeTheme.shouldUseDarkColors ? "#11182b" : "#fbfcff";
 function preferences() { return preferencesStore?.get() || { version: 1, theme: "system", locale: "system", resolvedLocale: locale }; }
@@ -224,6 +270,7 @@ function movePetWindow() {
 }
 
 function hintHeight(message) {
+  if (hintMeasurement?.message === message && hintMeasurement.locale === locale) return hintMeasurement.height;
   const charactersPerLine = ["zh-CN", "zh-TW", "ja"].includes(locale) ? HINT_CJK_CHARACTERS_PER_LINE : HINT_WESTERN_CHARACTERS_PER_LINE;
   const lines = Math.max(1, Math.ceil(Array.from(message).length / charactersPerLine));
   return lines * HINT_LINE_HEIGHT + HINT_CHROME_HEIGHT;
@@ -258,6 +305,11 @@ function syncHint() {
   const layout = hintLayout(hintMessage);
   hintWindow.setBounds(layout.bounds, false);
   hintWindow.webContents.send("hint:message", { message: hintMessage, anchorX: layout.anchorX });
+  // Do not expose a guessed, potentially clipped frame before Chromium lays out the text.
+  if (hintMeasurement?.message !== hintMessage || hintMeasurement.locale !== locale) {
+    hintWindow.hide();
+    return;
+  }
   raiseWindow(hintWindow);
   hintWindow.showInactive();
 }
@@ -396,7 +448,8 @@ function syncPet({ focus = false } = {}) {
       (!state.chatOpen || !cursorInSpeech(screen.getCursorScreenPoint(), petWindow.getBounds())),
   );
   const visible = petShouldShow(state);
-  send("pet:state", { ...state, visible });
+  send("pet:state", { ...state, visible, focusInput: focus && reminderView === "chat" });
+  sendReminderState();
   if (visible) {
     send("pet:hide-cancel");
     if (petWindow.isMinimized()) petWindow.restore();
@@ -411,11 +464,20 @@ function syncPet({ focus = false } = {}) {
   syncHint();
 }
 export function restorePetFrame() {
+  const wasNote = reminderView !== "chat" || autoReminder;
+  if (reminderView === "note") {
+    try { reminders?.dismissDue(); } catch { send("reminder:error", "noteStorageFailed"); return; }
+  }
+  reminders?.dismiss();
+  reminderView = "chat"; autoReminder = false;
   interruptInteraction();
   dispatch("dismiss-chat");
-  syncWindows({ focus: state.mode === MODES.PET && !state.manualHidden });
+  syncWindows({ focus: !wasNote && state.mode === MODES.PET && !state.manualHidden });
 }
 export function showChat() {
+  autoReminder = false;
+  const note = reminders?.snapshot().note;
+  reminderView = note?.due ? "note" : "chat";
   const wasHidden = state.manualHidden || !activeWindow()?.isVisible();
   interruptInteraction();
   if (state.mode === MODES.BEANS) setMode(MODES.PET);
@@ -434,6 +496,7 @@ export function toggleHidden() {
     return;
   }
   dispatch("hide");
+  reminders?.resetPresentation();
   animateHide(target);
   rebuildTrayMenu();
 }
@@ -526,6 +589,8 @@ function createGameWindow({ focus = false } = {}) {
 export function setMode(nextMode) {
   nextMode = normalizeMode(nextMode);
   if (!Object.values(MODES).includes(nextMode)) return;
+  reminders?.resetPresentation();
+  reminderView = "chat"; autoReminder = false;
   const wasHidden = state.manualHidden || !activeWindow()?.isVisible();
   cancelHide();
   const previousMode = state.mode;
@@ -758,6 +823,7 @@ function createPetWindow() {
 }
 function createHintWindow() {
   hintReady = false;
+  hintMeasurement = undefined;
   const layout = hintLayout(hintMessage);
   const win = new BrowserWindow({
     ...layout.bounds,
@@ -959,13 +1025,49 @@ function fromPet(event) {
     event.sender === petWindow?.webContents && event.senderFrame === petWindow.webContents.mainFrame
   );
 }
-ipcMain.handle("chat:send", (event, prompt) => {
+ipcMain.handle("chat:send", async (event, prompt) => {
   if (!fromPet(event)) throw new Error("Invalid sender");
-  return askClaude(prompt, {
-    persona: selectedCharacter.profile.persona,
-    locale,
-    provider: () => apiSettingsStore.provider() || loadChatProvider(),
-  });
+  if (typeof prompt !== "string" || prompt.length > 500 || !prompt.trim()) return { ok: false, error: "noteInvalid" };
+  try {
+    const result = await reminders.submit(reminderContext => askClaude(prompt, {
+      persona: selectedCharacter.profile.persona, locale, reminderContext,
+      ...(reminderRequest ? { request: reminderRequest } : {}),
+      provider: () => apiSettingsStore.provider() || loadChatProvider(),
+    }));
+    if (state.chatOpen && result.view) reminderView = result.view;
+    sendReminderState();
+    return { ok: true, ...result };
+  } catch (error) {
+    return { ok: false, error: /^note[A-Z]/.test(error.message) ? error.message : "chatFailed" };
+  }
+});
+ipcMain.handle("reminder:get", event => {
+  if (!fromPet(event)) throw new Error("Invalid sender");
+  return { ...reminders.snapshot(), view: reminderView };
+});
+ipcMain.handle("reminder:view", (event, view) => {
+  if (!fromPet(event) || !["chat", "note"].includes(view)) throw new Error("Invalid request");
+  if (view === "chat") {
+    try { reminders.dismissDue(); } catch { return { ok: false, error: "noteStorageFailed" }; }
+    reminders.dismiss();
+  }
+  reminderView = view; autoReminder = false;
+  sendReminderState();
+  return { ok: true };
+});
+ipcMain.handle("reminder:action", (event, value) => {
+  if (!fromPet(event)) throw new Error("Invalid sender");
+  try {
+    if (!value || typeof value !== "object" || !Number.isSafeInteger(value.revision)) throw new Error("noteInvalid");
+    const snapshot = reminders.action(value);
+    reminderView = snapshot.note || snapshot.warning ? "note" : "chat";
+    if (value.action === "ack") {
+      autoReminder = false;
+      interruptInteraction(); dispatch("dismiss-chat"); syncWindows();
+    }
+    sendReminderState();
+    return { ok: true, snapshot, view: reminderView };
+  } catch (error) { return { ok: false, error: /^note[A-Z]/.test(error.message) ? error.message : "noteInvalid", snapshot: reminders.snapshot() }; }
 });
 ipcMain.on("chat:dismiss", (event) => {
   if (fromPet(event)) restorePetFrame();
@@ -986,6 +1088,15 @@ ipcMain.on("pet:hover", (event, value) => {
 });
 ipcMain.on("pet:hint", (event, message) => {
   if (fromPet(event)) setHintMessage(message);
+});
+ipcMain.on("hint:measure", (event, value) => {
+  if (event.sender !== hintWindow?.webContents || event.senderFrame !== hintWindow.webContents.mainFrame) return;
+  const width = ["zh-CN", "zh-TW", "ja"].includes(locale) ? PET_SIZE : HINT_WESTERN_WIDTH;
+  if (!value || !hintMessage || value.message !== hintMessage || value.locale !== locale || value.width !== width ||
+      !Number.isInteger(value.height) || value.height < 25 || value.height > 1024) return;
+  if (hintMeasurement?.message === value.message && hintMeasurement.locale === value.locale && hintMeasurement.height === value.height) return;
+  hintMeasurement = { message: value.message, locale: value.locale, height: value.height };
+  syncHint();
 });
 ipcMain.on("pet:drag", handlePetDrag);
 ipcMain.on("pet:hide-done", (event, id) => {
@@ -1018,20 +1129,17 @@ export const ready = app.whenReady().then(async () => {
     directory: app.getPath("userData"),
     secureStorage: safeStorage,
   });
+  reminders = createReminders({
+    store: createReminderStore({ directory: app.getPath("userData"), secureStorage: safeStorage }),
+    changed: sendReminderState,
+  });
+  reminderTimer = setInterval(checkReminders, 1000);
   characterLibrary = await createCharacterLibrary({
     directory: app.getPath("userData"),
     bindEditingShortcuts,
-    analyzeImage: process.env.BLUEPET_TEST_CHARACTER_ANALYSIS === "1"
-      ? async () => validateCharacterAnalysis({
-        version: 1,
-        quality: { decision: "pass", issues: [], explanation: "桌面测试使用本地固定分析，不请求真实模型。" },
-        persona: { archetype: "proud", voice: "reserved", identity: "一只桌面测试黑猫", summary: "警觉而克制。", traits: ["警觉", "克制"] },
-        parts: [{ kind: "body", confidence: .98, box: [.1, .1, .8, .8] }, { kind: "eye", confidence: .9, box: [.25, .3, .4, .12] }],
-      })
-      : input => analyzeCharacterImage(input, {
-        provider: () => apiSettingsStore.provider() || loadChatProvider(),
-        locale,
-      }),
+    analyzeImage: input => analyzeCharacterImage(input, characterServices()),
+    generateFields: (input, onProgress) => generateCharacterFields(input, { ...characterServices(), onProgress }),
+    openSettings: showApiSettings,
     onOpen: () => interruptInteraction({ preserveMotion: true }),
     locale: () => locale,
     backgroundColor: windowBackground,
@@ -1074,8 +1182,13 @@ export const ready = app.whenReady().then(async () => {
     screen.on(event, () => recoverWindows());
   for (const event of ["resume", "unlock-screen"])
     powerMonitor.on(event, () => {
+      if (event === "unlock-screen") screenLocked = false;
+      else suspended = false;
       recoverWindows();
+      checkReminders();
     });
+  powerMonitor.on("lock-screen", () => { screenLocked = true; });
+  powerMonitor.on("suspend", () => { suspended = true; });
   app.on("activate", () => {
     if (!dragSession) syncWindows();
   });
@@ -1083,6 +1196,7 @@ export const ready = app.whenReady().then(async () => {
 function prepareQuit() {
   quitting = true;
   clearInterval(loop);
+  clearInterval(reminderTimer);
   cancelHide();
 }
 app.on("before-quit", prepareQuit);
@@ -1092,6 +1206,7 @@ app.on("window-all-closed", () => {});
 // Test code runs in the main process; this API is not exposed to renderers or a port.
 export function getRuntime() {
   return {
+    reminders,
     state: { ...state },
     position: { ...position },
     velocity: { ...velocity },

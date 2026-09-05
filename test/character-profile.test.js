@@ -30,6 +30,10 @@ test("profile validation rejects executable motion and unbounded model suggestio
   assert.throws(() => validateCharacterProfile(script), /不支持的动作/);
   const longLine = clone(); longLine.reactions.headpat.messages = ["长".repeat(51)];
   assert.throws(() => validateCharacterProfile(longLine), /1–50/);
+  const translatedEgg = clone(); translatedEgg.easterEgg.description = "x".repeat(120);
+  assert.equal(validateCharacterProfile(translatedEgg).easterEgg.description.length, 120);
+  translatedEgg.easterEgg.description += "x";
+  assert.throws(() => validateCharacterProfile(translatedEgg), /1–120/);
   const trigger = clone(); trigger.easterEgg.trigger.count = 100;
   assert.throws(() => validateCharacterProfile(trigger), /触发条件/);
 });

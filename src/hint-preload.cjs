@@ -10,5 +10,6 @@ contextBridge.exposeInMainWorld("bluepetPreferences", {
 });
 
 contextBridge.exposeInMainWorld("bluepetHint", {
+  reportSize: value => ipcRenderer.send("hint:measure", value),
   onMessage: (callback) => ipcRenderer.on("hint:message", (_event, message) => callback(message)),
 });

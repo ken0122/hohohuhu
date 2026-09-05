@@ -10,6 +10,7 @@
 html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
 button, input { font: inherit; }
 button { -webkit-app-region: no-drag; }
+[hidden] { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; clip: rect(0, 0, 0, 0); overflow: hidden; }
 
 .desktop-pet { position: relative; width: 100%; height: 100%; user-select: none; }
@@ -124,6 +125,40 @@ body.is-thinking .speech__status::before { animation: thinking 800ms ease-in-out
 
 @keyframes heart { 0% { opacity: 0; transform: translateY(8px) scale(.65) rotate(-8deg); } 24% { opacity: 1; } 100% { opacity: 0; transform: translateY(-25px) scale(1.1) rotate(8deg); } }
 @keyframes thinking { from { transform: scaleX(.4); opacity: .45; } to { transform: scaleX(1); opacity: 1; } }
+
+/* The same small speech surface, with a single celebratory arrival. */
+.note-badge { position: absolute; top: 10px; right: 44px; max-width: 103px; border: 0; border-radius: 7px; padding: 2px 5px; background: var(--blue-soft); color: var(--ink); font-size: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+.has-note:not(.is-note) .speech__status { max-width: 80px; overflow: hidden; white-space: nowrap; }
+.note-panel { height: 116px; display: flex; flex-direction: column; gap: 5px; position: relative; }
+.note-panel h2 { font-size: 12px; line-height: 16px; font-weight: 600; margin: 0; padding-right: 28px; flex-shrink: 0; color: var(--ink); }
+.note-details { flex: 1; min-height: 0; overflow: auto; padding-right: 5px; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.note-item + .note-item { margin-top: 5px; }
+.note-item p { margin: 0; font-size: 14px; line-height: 19px; overflow-wrap: anywhere; user-select: text; }
+.note-item time { display: block; color: var(--muted); font-size: 11px; line-height: 16px; font-variant-numeric: tabular-nums; }
+.note-replacing .note-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 5px; }
+.note-replacing .note-item p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.note-replacing .note-item time { font-size: 10px; }
+.note-actions { display: flex; align-items: stretch; gap: 6px; flex-shrink: 0; padding-right: 65px; }
+.note-actions:has(button + button) { padding-right: 0; }
+.note-actions button { min-width: 0; flex: 1; min-height: 28px; padding: 4px 7px; font-size: 11px; line-height: 14px; border: 0; border-radius: 10px; cursor: pointer; color: var(--ink); background: var(--field); }
+.note-actions button:hover { background: var(--field-hover); }
+.note-actions .note-primary { color: var(--on-primary); background: var(--primary); }
+.note-actions .note-primary:hover { background: var(--primary-hover); }
+.note-actions button:disabled { opacity: var(--disabled-opacity); cursor: wait; }
+.note-back { position: absolute; right: 0; bottom: 0; max-width: 65px; min-height: 28px; border: 0; border-radius: 8px; padding: 3px; color: var(--muted); background: transparent; font-size: 10px; cursor: pointer; }
+.note-panel:has(.note-actions button + button) .note-back { display: none; }
+.note-back:hover { background: var(--field); }
+.note-panel button:focus-visible, .note-badge:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.note-due { background: linear-gradient(145deg, var(--hint-paper), var(--surface) 75%); box-shadow: 0 7px 20px var(--speech-shadow); }
+.note-due .note-details { padding-right: 28px; }
+.note-sparkles { position: absolute; inset: -6px 0 0; width: 100%; height: 100%; pointer-events: none; fill: var(--warning); opacity: 0; }
+.note-due .note-sparkles { opacity: .65; }
+.note-arrive { animation: note-pop 350ms cubic-bezier(.16, 1, .3, 1); }
+.note-arrive .note-sparkles path { transform-box: fill-box; transform-origin: center; animation: note-shine 1500ms ease-out; }
+.note-arrive .note-sparkles path:nth-child(2) { animation-delay: 90ms; }
+.note-arrive .note-sparkles path:nth-child(3) { animation-delay: 180ms; }
+@keyframes note-pop { 0% { transform: translateY(6px) scale(.96); } 65% { transform: translateY(-2px) scale(1.01); } 100% { transform: none; } }
+@keyframes note-shine { 0% { opacity: .2; transform: scale(.5) rotate(-15deg); } 30% { opacity: 1; transform: scale(1.1); } 100% { opacity: .65; transform: none; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }

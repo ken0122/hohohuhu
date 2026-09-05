@@ -12,7 +12,14 @@ contextBridge.exposeInMainWorld("characterLibrary", {
   list: () => ipcRenderer.invoke("characters:list"),
   source: id => ipcRenderer.invoke("characters:source", id),
   choose: () => ipcRenderer.invoke("characters:choose"),
+  openSettings: () => ipcRenderer.invoke("characters:openSettings"),
   analyze: value => ipcRenderer.invoke("characters:analyze", value),
+  generate: value => ipcRenderer.invoke("characters:generate", value),
+  onGenerationProgress: callback => {
+    const listener = (_event, phase, diagnostics) => callback(phase, diagnostics);
+    ipcRenderer.on("characters:generation-progress", listener);
+    return () => ipcRenderer.removeListener("characters:generation-progress", listener);
+  },
   select: id => ipcRenderer.invoke("characters:select", id),
   import: value => ipcRenderer.invoke("characters:import", value),
   update: value => ipcRenderer.invoke("characters:update", value),

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { BLUE_ONE_EYE, BLACK_CAT, SUNNY_YELLOW } from "./characters.js";
 import { validateGeneratedSvg } from "./character-import.js";
 import { validateCharacterAnalysis } from "./character-analysis.js";
+import { characterText, CHARACTER_TEXT_LOCALES } from "./character-draft.js";
 import { BASIC_PROFILE, profileFromAnalysis } from "./character-profile.js";
 
 export const BUILTIN_CHARACTERS = Object.freeze([
@@ -87,7 +88,7 @@ export async function createCharacterStore(directory) {
     return task;
   }
   function catalog() {
-    return { selected: data.selected, warning, items: [...BUILTIN_CHARACTERS, ...data.items.map(({id,name}) => ({id,name,builtin:false}))] };
+    return { selected: data.selected, warning, items: [...BUILTIN_CHARACTERS, ...data.items.map(item => ({id:item.id,name:item.name,builtin:false, names:Object.fromEntries(CHARACTER_TEXT_LOCALES.map(locale => [locale,characterText(item,locale).name]))}))] };
   }
   return {
     catalog,

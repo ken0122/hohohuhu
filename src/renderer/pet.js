@@ -4,6 +4,7 @@ import { clickReaction, createInteractionPolicy, createStrokeGesture } from "./p
 import { createPetDrag } from "./pet-drag.js";
 import { installHideEffect } from "./hide-effect.js";
 import { appBrand, installLocalization, localizeDocument, tr } from "./localize.js";
+import { createReminderUI } from "./reminder-ui.js";
 const body = document.body;
 const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message");
@@ -35,6 +36,19 @@ applyCharacterPresentation();
 characterHost.addEventListener("character-mounted", applyCharacterPresentation);
 window.addEventListener("pagehide", () => { setHint(); character.destroy(); }, { once: true });
 let mode = "dodge", chatOpen = false, near = false, pending = false, replyState = "prompt";
+let noteOpen = false, replyKey = null;
+const reminderUI = createReminderUI({
+  onView(shown) {
+    noteOpen = shown;
+    if (shown && document.activeElement === input) input.blur();
+  },
+  feedback(key) {
+    replyKey = key; replyState = "reply";
+    reply.textContent = tr(key); status.textContent = tr("privateReply");
+    // Feedback must also be visible inside a failed note action.
+    if (noteOpen) document.querySelector("#note-heading").textContent = tr(key);
+  },
+});
 let presentationLocale;
 let reactionTimer, reactionHintTimer, hoverTimer, lastReaction = 0;
 let moving = false, holdTimer, pressPoint, suppressClick = false;
@@ -153,8 +167,7 @@ window.bluepet.onState(state => {
   speech.setAttribute("aria-hidden", String(!chatOpen));
   if (changedMode || changedChat || !state.visible) { drag.cancel(); moving = false; body.classList.remove("is-moving"); resetReaction(); character.reset(); }
   scheduleIdle();
-  if (chatOpen && state.visible) setTimeout(() => { if (chatOpen) input.focus(); }, 60);
-  if (changedChat && !chatOpen && !pending) input.value = "";
+  if (state.focusInput && chatOpen && state.visible) setTimeout(() => { if (chatOpen && !noteOpen && document.hasFocus()) input.focus(); }, 60);
 });
 window.bluepet.onPetMotion(motion => {
   if (drag.pressed) return;
@@ -180,19 +193,23 @@ form.addEventListener("submit", async event => {
   event.preventDefault();
   const message = input.value.trim();
   if (!message || pending) return;
-  pending = true; body.classList.add("is-thinking");
+  pending = true; replyKey = null; body.classList.add("is-thinking");
   replyState = "waiting"; status.textContent = tr("heard"); reply.textContent = tr("chatWaiting");
   input.disabled = true; sendButton.disabled = true;
   try {
-    reply.textContent = await window.bluepet.sendChat(message); replyState = "reply";
+    const result = await window.bluepet.sendChat(message);
+    if (!result.ok) { replyKey = result.error; throw new Error(); }
+    replyKey = result.key || null;
+    reply.textContent = result.reply || tr(result.key); replyState = "reply";
+    if (result.key === "noteSaved") reminderUI.message("noteSaved");
     status.textContent = tr("privateReply"); input.value = "";
   } catch {
     replyState = "error"; status.textContent = tr("missed");
-    reply.textContent = tr("chatFailed");
+    reply.textContent = tr(replyKey || "chatFailed");
   } finally {
     pending = false; body.classList.remove("is-thinking");
     input.disabled = false; sendButton.disabled = false;
-    if (chatOpen) input.focus();
+    if (chatOpen && !noteOpen && document.hasFocus()) input.focus();
   }
 });
 document.querySelector("#dismiss").addEventListener("click", () => window.bluepet.dismissChat());
@@ -256,6 +273,8 @@ await installLocalization(() => {
   if (replyState === "waiting") { status.textContent = tr("heard"); reply.textContent = tr("chatWaiting"); }
   if (replyState === "reply") status.textContent = tr("privateReply");
   if (replyState === "error") { status.textContent = tr("missed"); reply.textContent = tr("chatFailed"); }
+  if (replyKey) reply.textContent = tr(replyKey);
+  reminderUI.render();
   applyCharacterPresentation();
   character.reload().then(applyCharacterPresentation).catch(() => {});
 });

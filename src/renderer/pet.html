@@ -20,6 +20,8 @@ FORM: 桌面活物而非应用窗口；固定 staging，无随机方向 seed。
   <body data-mode="dodge">
     <main class="desktop-pet" aria-label="蓝色单眼桌面宠物" data-i18n-aria-label="petA11y">
       <section class="speech" aria-hidden="true" inert>
+        <button id="note-badge" class="note-badge" type="button" hidden></button>
+        <div id="chat-content">
         <div class="speech__response" aria-live="polite">
           <span class="speech__status" data-i18n="petListening">我在听</span>
           <p id="reply">悄悄说吧，我会小声回答。</p>
@@ -31,6 +33,14 @@ FORM: 桌面活物而非应用窗口；固定 staging，无随机方向 seed。
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 15V5m-5 5 5-5 5 5"/></svg>
           </button>
         </form>
+        </div>
+        <section id="note-panel" class="note-panel" aria-live="polite" hidden>
+          <svg class="note-sparkles" viewBox="0 0 240 120" aria-hidden="true"><path d="M206 7l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/><path d="M226 34l1.5 4 4 1.5-4 1.5-1.5 4-1.5-4-4-1.5 4-1.5z"/><path d="M189 44l1 3 3 1-3 1-1 3-1-3-3-1 3-1z"/></svg>
+          <h2 id="note-heading"></h2>
+          <div id="note-details" class="note-details"></div>
+          <div id="note-actions" class="note-actions"></div>
+          <button id="note-back" class="note-back" type="button"></button>
+        </section>
         <button id="dismiss" class="speech__dismiss" type="button" aria-label="关闭聊天" data-i18n-aria-label="closeChat">Esc</button>
       </section>
 
